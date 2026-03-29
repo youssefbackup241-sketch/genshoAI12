@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -10,10 +9,10 @@ const client = new Client({
     ]
 });
 
-// Users database (in-memory for now)
+// Database
 const users = {};
 
-// Spin data
+// Spins definitions
 const clans = [
     { name: 'Ōtsutsuki', rarity: 'Mythical', emoji: '👁️' },
     { name: 'Kaguya', rarity: 'Mythical', emoji: '🌌' },
@@ -77,15 +76,24 @@ const rarities = {
     Common: 50
 };
 
-function getRandomItem(arr) {
-    let total = 100;
-    const pick = Math.floor(Math.random() * total) + 1;
-    let current = 0;
-    for (const item of arr) {
-        current += rarities[item.rarity];
-        if (pick <= current) return item;
-    }
-    return arr[arr.length - 1];
+// Utility to pick random spin, preventing more than 2 dupes
+function getRandomSpin(arr, userArr) {
+    let attempt = 0;
+    let spin;
+    do {
+        const roll = Math.random() * 100;
+        let total = 0;
+        for (const item of arr) {
+            total += rarities[item.rarity];
+            if (roll <= total) {
+                spin = item;
+                break;
+            }
+        }
+        attempt++;
+        // Prevent more than 2 same items in user's spins
+    } while (userArr.filter(i => i.name === spin.name).length >= 2 && attempt < 10);
+    return spin;
 }
 
 client.on('ready', () => {
@@ -96,16 +104,26 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
     const userId = interaction.user.id;
-    const data = users[userId];
-    if (!data) return interaction.reply({ content: 'No spins to finalize!', ephemeral: true });
+    if (!users[userId]) return interaction.reply({ content: 'You have no spins to finalize!', ephemeral: true });
+    const type = interaction.customId;
 
-    const type = interaction.customId; // clan/element/trait
-    if (!data.finalized) data.finalized = {};
-    if (!data.finalized[type]) {
-        data.finalized[type] = data.spins[type][0]; // take the first spin
-        await interaction.update({ content: `Finalized ${type}: ${data.finalized[type].emoji} **${data.finalized[type].name}**`, components: [] });
+    if (!users[userId].finalized) users[userId].finalized = {};
+    if (type === 'element') {
+        if (!users[userId].finalized.element) users[userId].finalized.element = [];
+        if (users[userId].finalized.element.length < 2) {
+            const finalElement = users[userId].spins.element.shift();
+            users[userId].finalized.element.push(finalElement);
+            await interaction.update({ content: `Finalized element: ${finalElement.emoji} **${finalElement.name}**`, components: [] });
+        } else {
+            await interaction.reply({ content: 'You already finalized 2 elements!', ephemeral: true });
+        }
     } else {
-        await interaction.reply({ content: `You already finalized ${type}!`, ephemeral: true });
+        if (!users[userId].finalized[type]) {
+            users[userId].finalized[type] = users[userId].spins[type].shift();
+            await interaction.update({ content: `Finalized ${type}: ${users[userId].finalized[type].emoji} **${users[userId].finalized[type].name}**`, components: [] });
+        } else {
+            await interaction.reply({ content: `You already finalized ${type}!`, ephemeral: true });
+        }
     }
 });
 
@@ -115,49 +133,47 @@ client.on('messageCreate', async message => {
     const args = message.content.split(' ');
     const command = args.shift().toLowerCase();
 
-    if (!users[message.author.id]) {
-        users[message.author.id] = { spins: { clan: [], element: [], trait: [] }, finalized: {} };
-    }
-
+    if (!users[message.author.id]) users[message.author.id] = { spins: { clan: [], element: [], trait: [] }, finalized: {} };
     const userData = users[message.author.id];
 
+    // Spins
     if (command === '!clan') {
-        const spin = getRandomItem(clans);
+        const spin = getRandomSpin(clans, userData.spins.clan);
         userData.spins.clan.push(spin);
         const embed = new EmbedBuilder()
             .setTitle('🎲 Clan Spin')
             .setDescription(`${spin.emoji} **${spin.name}**\nSpins left: 10`)
             .setColor(0x00FF00);
-        const button = new ActionRowBuilder().addComponents(
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('clan').setLabel('Finalize Clan').setStyle(ButtonStyle.Primary)
         );
-        message.channel.send({ embeds: [embed], components: [button] });
+        message.channel.send({ embeds: [embed], components: [row] });
     }
 
     if (command === '!element') {
-        const spin = getRandomItem(elements);
+        const spin = getRandomSpin(elements, userData.spins.element);
         userData.spins.element.push(spin);
         const embed = new EmbedBuilder()
             .setTitle('🎲 Element Spin')
             .setDescription(`${spin.emoji} **${spin.name}**\nSpins left: 10`)
             .setColor(0x1E90FF);
-        const button = new ActionRowBuilder().addComponents(
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('element').setLabel('Finalize Element').setStyle(ButtonStyle.Primary)
         );
-        message.channel.send({ embeds: [embed], components: [button] });
+        message.channel.send({ embeds: [embed], components: [row] });
     }
 
     if (command === '!trait') {
-        const spin = getRandomItem(traits);
+        const spin = getRandomSpin(traits, userData.spins.trait);
         userData.spins.trait.push(spin);
         const embed = new EmbedBuilder()
             .setTitle('🎲 Trait Spin')
             .setDescription(`${spin.emoji} **${spin.name}**\nSpins left: 5`)
             .setColor(0xFF69B4);
-        const button = new ActionRowBuilder().addComponents(
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('trait').setLabel('Finalize Trait').setStyle(ButtonStyle.Primary)
         );
-        message.channel.send({ embeds: [embed], components: [button] });
+        message.channel.send({ embeds: [embed], components: [row] });
     }
 
     if (command === '!check') {
@@ -167,7 +183,7 @@ client.on('messageCreate', async message => {
         const f = userData.finalized;
         embed.setDescription(
             `Clan: ${f.clan ? `${f.clan.emoji} **${f.clan.name}**` : 'None'}\n` +
-            `Elements: ${f.element ? `${f.element.emoji} **${f.element.name}**` : 'None'}\n` +
+            `Elements: ${f.element ? f.element.map(e => `${e.emoji} **${e.name}**`).join(', ') : 'None'}\n` +
             `Trait: ${f.trait ? `${f.trait.emoji} **${f.trait.name}**` : 'None'}`
         );
         message.channel.send({ embeds: [embed] });

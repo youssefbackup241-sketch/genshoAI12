@@ -74,6 +74,12 @@ const rarityEmoji = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "�
 function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
 function ensureUser(id) {
     if (!userData[id]) userData[id] = { spins: { clan: 10, element: 10, trait: 5 }, temp: { clan: [], element: [], trait: [] }, finalized: { clan: null, element: [], trait: null } };
+
+    // FIX (Bug 2): Ensure finalized.element is always an array, even for users
+    // created before this field existed or if it was saved as null.
+    if (!Array.isArray(userData[id].finalized.element)) {
+        userData[id].finalized.element = [];
+    }
 }
 function weightedRandom(arr) {
     const pool = [];
@@ -87,23 +93,36 @@ async function spinCommand(msg, type) {
     ensureUser(id);
     if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
 
+    // FIX (Bug 1): Determine the max allowed duplicates per type.
+    // For 'element' the temp list can hold up to 2 items, so allow up to 2 of
+    // the same result; for all other types only 1 is allowed.
+    const maxDupes = type === 'element' ? 2 : 1;
+
     let result;
     let attempts = 0;
     do {
         result = weightedRandom(type === 'clan' ? CLANS : type === 'element' ? ELEMENTS : TRAITS);
         attempts++;
-    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 2 && attempts < 10);
+    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= maxDupes && attempts < 10);
 
-    if (userData[id].temp[type].some(x => x.item === result.item)) userData[id].spins[type]++;
-
+    // FIX (Bug 1): Only refund the spin when the result is a true duplicate
+    // (already appears in temp). Push the result first so the count is accurate,
+    // then decide whether to subtract.
+    const isDuplicate = userData[id].temp[type].some(x => x.item === result.item);
     userData[id].temp[type].push(result);
-    userData[id].spins[type]--;
+
+    if (!isDuplicate) {
+        // New result — consume one spin.
+        userData[id].spins[type]--;
+    }
+    // Duplicate result — spin is free (no change to spin count).
+
     saveData();
 
     const embed = new EmbedBuilder()
         .setTitle(`🎲 ${type.toUpperCase()} Spin Result`)
         .setColor({ Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0xff4500, Rare: 0x1e90ff, Common: 0xaaaaaa }[result.rarity])
-        .setDescription(`${rarityEmoji[result.rarity]} **${result.item}** (${result.rarity})`)
+        .setDescription(`${rarityEmoji[result.rarity]} **${result.item}** (${result.rarity})${isDuplicate ? '\n*(Duplicate — spin refunded!)*' : ''}`)
         .addFields(
             { name: 'Spins left', value: `${userData[id].spins[type]}`, inline: true },
             { name: 'Temp results', value: userData[id].temp[type].map(x => `${rarityEmoji[x.rarity]} ${x.item}`).join(', ') || 'None', inline: false }
@@ -153,12 +172,18 @@ client.on('messageCreate', async msg => {
         ensureUser(target.id);
         const data = userData[target.id].finalized;
 
+        // FIX (Bug 2): Guard against element being null/undefined before calling
+        // .length or .join — ensureUser above already normalises it to [].
+        const elementValue = Array.isArray(data.element) && data.element.length > 0
+            ? data.element.join(', ')
+            : 'None';
+
         const embed = new EmbedBuilder()
             .setTitle(`📜 ${target.username}'s Specs`)
             .setColor(0x00ff00)
             .addFields(
                 { name: 'Clan', value: data.clan || 'None', inline: true },
-                { name: 'Elements', value: data.element.length > 0 ? data.element.join(', ') : 'None', inline: true },
+                { name: 'Elements', value: elementValue, inline: true },
                 { name: 'Trait', value: data.trait || 'None', inline: true }
             );
 

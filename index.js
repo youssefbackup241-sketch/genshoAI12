@@ -1,217 +1,201 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ]
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-// Database
-const users = {};
-
-// Spins definitions
-const clans = [
-    { name: 'Ōtsutsuki', rarity: 'Mythical', emoji: '👁️' },
-    { name: 'Kaguya', rarity: 'Mythical', emoji: '🌌' },
-    { name: 'Uchiha', rarity: 'Legendary', emoji: '🔥' },
-    { name: 'Senju', rarity: 'Legendary', emoji: '🌳' },
-    { name: 'Hyuga', rarity: 'Legendary', emoji: '👀' },
-    { name: 'Uzumaki', rarity: 'Legendary', emoji: '🌀' },
-    { name: 'Yuki', rarity: 'Epic', emoji: '❄️' },
-    { name: 'Hozuki', rarity: 'Epic', emoji: '💧' },
-    { name: 'Hoshigaki', rarity: 'Epic', emoji: '🌑' },
-    { name: 'Chinoike', rarity: 'Epic', emoji: '🩸' },
-    { name: 'Jugo', rarity: 'Epic', emoji: '🌿' },
-    { name: 'Kurama', rarity: 'Epic', emoji: '🦊' },
-    { name: 'Sabaku', rarity: 'Epic', emoji: '🏜️' },
-    { name: 'Shirogane', rarity: 'Rare', emoji: '⚪' },
-    { name: 'Yotsuki', rarity: 'Rare', emoji: '✖️' },
-    { name: 'Fūma', rarity: 'Rare', emoji: '🗡️' },
-    { name: 'Iburi', rarity: 'Rare', emoji: '💨' },
-    { name: 'Hatake', rarity: 'Rare', emoji: '🧑‍🦰' },
-    { name: 'Kamizuru', rarity: 'Rare', emoji: '🦅' },
-    { name: 'Sarutobi', rarity: 'Rare', emoji: '🐒' },
-    { name: 'Aburame', rarity: 'Common', emoji: '🐛' },
-    { name: 'Akimichi', rarity: 'Common', emoji: '🍗' },
-    { name: 'Nara', rarity: 'Common', emoji: '🦌' },
-    { name: 'Yamanaka', rarity: 'Common', emoji: '💭' },
-    { name: 'Inuzuka', rarity: 'Common', emoji: '🐕' },
-    { name: 'Shimura', rarity: 'Common', emoji: '🧓' },
-    { name: 'Lee', rarity: 'Common', emoji: '🥷' }
+// ----- DATA -----
+const CLANS = [
+  { name: "Ōtsutsuki", rarity: "Mythical", emoji: "🌌" },
+  { name: "Kaguya", rarity: "Mythical", emoji: "👑" },
+  { name: "Uchiha", rarity: "Legendary", emoji: "🔥" },
+  { name: "Senju", rarity: "Legendary", emoji: "🌲" },
+  { name: "Hyuga", rarity: "Legendary", emoji: "👁️" },
+  { name: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
+  { name: "Yuki", rarity: "Epic", emoji: "❄️" },
+  { name: "Hozuki", rarity: "Epic", emoji: "💧" },
+  { name: "Hoshigaki", rarity: "Epic", emoji: "🌑" },
+  { name: "Chinoike", rarity: "Epic", emoji: "🩸" },
+  { name: "Jugo", rarity: "Epic", emoji: "🟣" },
+  { name: "Kurama", rarity: "Epic", emoji: "🦊" },
+  { name: "Sabaku", rarity: "Epic", emoji: "🏜️" },
+  { name: "Shirogane", rarity: "Rare", emoji: "⚪" },
+  { name: "Yotsuki", rarity: "Rare", emoji: "🟡" },
+  { name: "Fūma", rarity: "Rare", emoji: "🗡️" },
+  { name: "Iburi", rarity: "Rare", emoji: "💨" },
+  { name: "Hatake", rarity: "Rare", emoji: "👨‍🌾" },
+  { name: "Kamizuru", rarity: "Rare", emoji: "🦅" },
+  { name: "Sarutobi", rarity: "Rare", emoji: "🐒" },
+  { name: "Aburame", rarity: "Common", emoji: "🐜" },
+  { name: "Akimichi", rarity: "Common", emoji: "🍗" },
+  { name: "Nara", rarity: "Common", emoji: "🦌" },
+  { name: "Yamanaka", rarity: "Common", emoji: "🧠" },
+  { name: "Inuzuka", rarity: "Common", emoji: "🐕" },
+  { name: "Shimura", rarity: "Common", emoji: "🏯" },
+  { name: "Lee", rarity: "Common", emoji: "🥋" }
 ];
 
-const elements = [
-    { name: 'Fire', rarity: 'Rare', emoji: '🔥' },
-    { name: 'Water', rarity: 'Rare', emoji: '💧' },
-    { name: 'Earth', rarity: 'Rare', emoji: '🌍' },
-    { name: 'Wind', rarity: 'Rare', emoji: '🌪️' },
-    { name: 'Lightning', rarity: 'Rare', emoji: '⚡' },
-    { name: 'Wood', rarity: 'Legendary', emoji: '🌳' },
-    { name: 'Yin', rarity: 'Mythical', emoji: '🌑' },
-    { name: 'Yang', rarity: 'Mythical', emoji: '🌕' },
-    { name: 'Chaos', rarity: 'Mythical', emoji: '🌀' },
-    { name: 'Order', rarity: 'Mythical', emoji: '⚖️' }
+const ELEMENTS = [
+  { name: "Wood", rarity: "Legendary", emoji: "🌳" },
+  { name: "Fire", rarity: "Rare", emoji: "🔥" },
+  { name: "Water", rarity: "Rare", emoji: "💧" },
+  { name: "Earth", rarity: "Rare", emoji: "🪨" },
+  { name: "Wind", rarity: "Rare", emoji: "💨" },
+  { name: "Lightning", rarity: "Rare", emoji: "⚡" },
+  { name: "Yin", rarity: "Mythical", emoji: "🌑" },
+  { name: "Yang", rarity: "Mythical", emoji: "🌕" },
+  { name: "Chaos", rarity: "Mythical", emoji: "🌀" },
+  { name: "Order", rarity: "Mythical", emoji: "⚖️" }
 ];
 
-const traits = [
-    { name: 'Analytical Eye', rarity: 'Legendary', emoji: '👁️' },
-    { name: 'Jutsu Amplification', rarity: 'Legendary', emoji: '💥' },
-    { name: 'Elemental Affinity Mastery', rarity: 'Epic', emoji: '✨' },
-    { name: 'Illusion/Genjutsu Potency', rarity: 'Epic', emoji: '🌫️' },
-    { name: 'Kekkei Genkai Proficiency', rarity: 'Legendary', emoji: '🩸' },
-    { name: 'Fuinjutsu Technique Expertise', rarity: 'Rare', emoji: '🪄' },
-    { name: 'Iryojutsu Proficiency', rarity: 'Epic', emoji: '🩹' },
-    { name: 'Scientist', rarity: 'Rare', emoji: '🧪' },
-    { name: 'Superhuman Physique', rarity: 'Rare', emoji: '💪' }
+const TRAITS = [
+  { name: "Analytical Eye", rarity: "Legendary", emoji: "👁️" },
+  { name: "Clan Specialist", rarity: "Mythical", emoji: "🦸" },
+  { name: "Jutsu Amplification", rarity: "Legendary", emoji: "💥" },
+  { name: "Elemental Affinity Mastery", rarity: "Epic", emoji: "🌪️" },
+  { name: "Illusion/Genjutsu Potency", rarity: "Epic", emoji: "🌀" },
+  { name: "Kekkei Genkai Proficiency", rarity: "Legendary", emoji: "✨" },
+  { name: "Fuinjutsu Technique Expertise", rarity: "Rare", emoji: "🛡️" },
+  { name: "Iryojutsu Proficiency", rarity: "Epic", emoji: "🩹" },
+  { name: "Scientist", rarity: "Rare", emoji: "🧪" },
+  { name: "Superhuman Physique", rarity: "Rare", emoji: "💪" }
 ];
 
-const rarities = {
-    Mythical: 1,
-    Legendary: 5,
-    Epic: 15,
-    Rare: 29,
-    Common: 50
-};
-
-// Utility to pick random spin, preventing more than 2 dupes
-function getRandomSpin(arr, userArr) {
-    let attempt = 0;
-    let spin;
-    do {
-        const roll = Math.random() * 100;
-        let total = 0;
-        for (const item of arr) {
-            total += rarities[item.rarity];
-            if (roll <= total) {
-                spin = item;
-                break;
-            }
-        }
-        attempt++;
-        // Prevent more than 2 same items in user's spins
-    } while (userArr.filter(i => i.name === spin.name).length >= 2 && attempt < 10);
-    return spin;
+// ----- UTILITY -----
+function getRandomItem(array) {
+  const chanceRoll = Math.random() * 100;
+  let pool = [];
+  for (const item of array) {
+    let chance = 0;
+    switch (item.rarity) {
+      case "Mythical": chance = 1; break;
+      case "Legendary": chance = 5; break;
+      case "Epic": chance = 15; break;
+      case "Rare": chance = 30; break;
+      case "Common": chance = 49; break;
+    }
+    for (let i = 0; i < chance; i++) pool.push(item);
+  }
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : array[Math.floor(Math.random() * array.length)];
 }
 
-client.on('ready', () => {
-    console.log(`Logged in as ${client.user.tag}`);
-});
+// ----- STORAGE -----
+let users = {};
+const DATA_FILE = './users.json';
+if (fs.existsSync(DATA_FILE)) users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
+function saveData() { fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2)); }
 
-    const userId = interaction.user.id;
-    if (!users[userId]) return interaction.reply({ content: 'You have no spins to finalize!', ephemeral: true });
-    const type = interaction.customId;
+// ----- SPIN LOGIC -----
+function spinCategory(userId, category, amount) {
+  if (!users[userId]) users[userId] = { spins: { clan: 10, element: 10, trait: 5 }, finalized: { clan: [], element: [], trait: [] } };
+  let spinsLeft = users[userId].spins[category];
+  if (spinsLeft <= 0) return null;
 
-    if (!users[userId].finalized) users[userId].finalized = {};
-    if (type === 'element') {
-        if (!users[userId].finalized.element) users[userId].finalized.element = [];
-        if (users[userId].finalized.element.length < 2) {
-            const finalElement = users[userId].spins.element.shift();
-            users[userId].finalized.element.push(finalElement);
-            await interaction.update({ content: `Finalized element: ${finalElement.emoji} **${finalElement.name}**`, components: [] });
-        } else {
-            await interaction.reply({ content: 'You already finalized 2 elements!', ephemeral: true });
-        }
-    } else {
-        if (!users[userId].finalized[type]) {
-            users[userId].finalized[type] = users[userId].spins[type].shift();
-            await interaction.update({ content: `Finalized ${type}: ${users[userId].finalized[type].emoji} **${users[userId].finalized[type].name}**`, components: [] });
-        } else {
-            await interaction.reply({ content: `You already finalized ${type}!`, ephemeral: true });
-        }
+  const dataArray = category === "clan" ? CLANS : category === "element" ? ELEMENTS : TRAITS;
+  const results = [];
+  for (let i = 0; i < amount; i++) {
+    if (users[userId].spins[category] <= 0) break;
+    let item = getRandomItem(dataArray);
+
+    // DUPLICATE PROTECTION
+    let finalized = users[userId].finalized[category].map(f => f.name);
+    let sameCount = finalized.filter(n => n === item.name).length;
+    if (sameCount >= 2) {
+      users[userId].spins[category] += 1; // give extra spin
+      continue;
     }
-});
 
+    results.push(item);
+    users[userId].spins[category] -= 1;
+  }
+
+  saveData();
+  return results;
+}
+
+// ----- COMMANDS -----
 client.on('messageCreate', async message => {
-    if (!message.guild || message.author.bot) return;
+  if (message.author.bot) return;
+  const prefix = "!";
+  if (!message.content.startsWith(prefix)) return;
 
-    const args = message.content.split(' ');
-    const command = args.shift().toLowerCase();
+  const args = message.content.slice(prefix.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
 
-    if (!users[message.author.id]) users[message.author.id] = { spins: { clan: [], element: [], trait: [] }, finalized: {} };
-    const userData = users[message.author.id];
+  const userId = message.author.id;
+  if (!users[userId]) users[userId] = { spins: { clan: 10, element: 10, trait: 5 }, finalized: { clan: [], element: [], trait: [] } };
 
-    // Spins
-    if (command === '!clan') {
-        const spin = getRandomSpin(clans, userData.spins.clan);
-        userData.spins.clan.push(spin);
-        const embed = new EmbedBuilder()
-            .setTitle('🎲 Clan Spin')
-            .setDescription(`${spin.emoji} **${spin.name}**\nSpins left: 10`)
-            .setColor(0x00FF00);
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('clan').setLabel('Finalize Clan').setStyle(ButtonStyle.Primary)
-        );
-        message.channel.send({ embeds: [embed], components: [row] });
-    }
+  if (command === "clan" || command === "element" || command === "trait") {
+    let results = spinCategory(userId, command, 1);
+    if (!results || results.length === 0) return message.reply("No spins left!");
 
-    if (command === '!element') {
-        const spin = getRandomSpin(elements, userData.spins.element);
-        userData.spins.element.push(spin);
-        const embed = new EmbedBuilder()
-            .setTitle('🎲 Element Spin')
-            .setDescription(`${spin.emoji} **${spin.name}**\nSpins left: 10`)
-            .setColor(0x1E90FF);
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('element').setLabel('Finalize Element').setStyle(ButtonStyle.Primary)
-        );
-        message.channel.send({ embeds: [embed], components: [row] });
-    }
+    const embed = new EmbedBuilder()
+      .setTitle(`🎰 ${command.toUpperCase()} Spin`)
+      .setDescription(results.map(r => `${r.emoji} **${r.name}** (${r.rarity})`).join("\n"))
+      .addFields({ name: "Spins Left", value: `${users[userId].spins[command]}` })
+      .setColor("Random");
 
-    if (command === '!trait') {
-        const spin = getRandomSpin(traits, userData.spins.trait);
-        userData.spins.trait.push(spin);
-        const embed = new EmbedBuilder()
-            .setTitle('🎲 Trait Spin')
-            .setDescription(`${spin.emoji} **${spin.name}**\nSpins left: 5`)
-            .setColor(0xFF69B4);
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('trait').setLabel('Finalize Trait').setStyle(ButtonStyle.Primary)
-        );
-        message.channel.send({ embeds: [embed], components: [row] });
-    }
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`finalize_${command}_${userId}`)
+        .setLabel("Finalize")
+        .setStyle(ButtonStyle.Success)
+    );
 
-    if (command === '!check') {
-        const embed = new EmbedBuilder()
-            .setTitle(`📝 ${message.author.username}'s Finalized Specs`)
-            .setColor(0xFFD700);
-        const f = userData.finalized;
-        embed.setDescription(
-            `Clan: ${f.clan ? `${f.clan.emoji} **${f.clan.name}**` : 'None'}\n` +
-            `Elements: ${f.element ? f.element.map(e => `${e.emoji} **${e.name}**`).join(', ') : 'None'}\n` +
-            `Trait: ${f.trait ? `${f.trait.emoji} **${f.trait.name}**` : 'None'}`
-        );
-        message.channel.send({ embeds: [embed] });
-    }
+    await message.reply({ embeds: [embed], components: [row] });
+  }
 
-    if (command === '!announce') {
-        const content = args.join(' ');
-        if (!content) return message.reply('Please provide a message.');
-        const embed = new EmbedBuilder()
-            .setDescription(content)
-            .setColor(0x00FFFF);
-        message.channel.send({ embeds: [embed] });
-    }
+  if (command === "check") {
+    const data = users[userId].finalized;
+    const embed = new EmbedBuilder()
+      .setTitle(`${message.author.username}'s Finalized Specs`)
+      .setDescription(
+        `**Clans:** ${data.clan.map(c => c.emoji + " " + c.name).join(", ") || "None"}\n` +
+        `**Elements:** ${data.element.map(c => c.emoji + " " + c.name).join(", ") || "None"}\n` +
+        `**Traits:** ${data.trait.map(c => c.emoji + " " + c.name).join(", ") || "None"}`
+      )
+      .setColor("Random");
+    message.reply({ embeds: [embed] });
+  }
 
-    if (command === '!cmds') {
-        const embed = new EmbedBuilder()
-            .setTitle('📜 Command List')
-            .setColor(0xFFA500)
-            .setDescription(
-                '**!clan** – Roll a clan\n' +
-                '**!element** – Roll an element\n' +
-                '**!trait** – Roll a trait\n' +
-                '**!check** – See your finalized specs\n' +
-                '**!announce** – Send an embed announcement\n' +
-                '**!cmds** – Show this command list'
-            );
-        message.channel.send({ embeds: [embed] });
-    }
+  if (command === "cmds") {
+    const embed = new EmbedBuilder()
+      .setTitle("Command List")
+      .setDescription("!clan | !element | !trait | !check | !cmds | !announce")
+      .setColor("Blue");
+    message.reply({ embeds: [embed] });
+  }
+
+  if (command === "announce") {
+    const text = args.join(" ");
+    if (!text) return message.reply("Provide a message to announce.");
+    const embed = new EmbedBuilder()
+      .setDescription(text)
+      .setColor("Green");
+    message.channel.send({ embeds: [embed] });
+  }
 });
 
+// ----- BUTTON INTERACTIONS -----
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  const [action, category, uid] = interaction.customId.split("_");
+  if (action !== "finalize") return;
+
+  if (interaction.user.id !== uid) return interaction.reply({ content: "This isn't your spin!", ephemeral: true });
+
+  const results = spinCategory(uid, category, 0); // nothing new, just finalize previous
+  if (!results) return interaction.reply({ content: "No spins to finalize!", ephemeral: true });
+
+  const lastItem = users[uid].spins[category] < 10 ? null : getRandomItem(category === "clan" ? CLANS : category === "element" ? ELEMENTS : TRAITS);
+  if (lastItem && !users[uid].finalized[category].some(f => f.name === lastItem.name)) {
+    users[uid].finalized[category].push(lastItem);
+    saveData();
+  }
+
+  await interaction.update({ content: `✅ Finalized your ${category}!`, components: [] });
+});
+
+// ----- LOGIN -----
 client.login(process.env.DISCORD_TOKEN);

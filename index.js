@@ -75,11 +75,14 @@ const TRAITS = [
     { item: "Superhuman Physique", rarity: "Rare", emoji: "💪" }
 ];
 
-const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 25, Rare: 50, Common: 40 };
-const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 70, Common: 40 };
-const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
+// UI & THEME CONFIG
+const RARITY_COLORS = { Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0x9400d3, Rare: 0x1e90ff, Common: 0x808080 };
+const RARITY_EMOJI = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
 
-const rarityEmoji = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
+// RARITY WEIGHTS (Scaled by 10 in weightedRandom)
+const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 8, Epic: 35, Rare: 65, Common: 35 }; // Increased Rare/Epic
+const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 75, Common: 35 };
+const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
 
 // ---------------- UTILS ----------------
 function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
@@ -92,29 +95,16 @@ function ensureUser(id) {
             finalized: { clan: null, element1: null, element2: null, trait: null } 
         };
     }
-
-    // Initialize missing top-level objects
     if (!userData[id].spins) userData[id].spins = {};
     if (!userData[id].temp) userData[id].temp = {};
     if (!userData[id].finalized) userData[id].finalized = {};
 
-    // Heal spins counts
-    if (userData[id].spins.clan === undefined) userData[id].spins.clan = 15;
-    if (userData[id].spins.element1 === undefined) userData[id].spins.element1 = 6;
-    if (userData[id].spins.element2 === undefined) userData[id].spins.element2 = 6;
-    if (userData[id].spins.trait === undefined) userData[id].spins.trait = 3;
-
-    // Heal temp arrays
-    if (!Array.isArray(userData[id].temp.clan)) userData[id].temp.clan = [];
-    if (!Array.isArray(userData[id].temp.element1)) userData[id].temp.element1 = [];
-    if (!Array.isArray(userData[id].temp.element2)) userData[id].temp.element2 = [];
-    if (!Array.isArray(userData[id].temp.trait)) userData[id].temp.trait = [];
-
-    // Heal finalized slots
-    if (userData[id].finalized.clan === undefined) userData[id].finalized.clan = null;
-    if (userData[id].finalized.element1 === undefined) userData[id].finalized.element1 = null;
-    if (userData[id].finalized.element2 === undefined) userData[id].finalized.element2 = null;
-    if (userData[id].finalized.trait === undefined) userData[id].finalized.trait = null;
+    const defaults = { clan: 15, element1: 6, element2: 6, trait: 3 };
+    for (const key in defaults) {
+        if (userData[id].spins[key] === undefined) userData[id].spins[key] = defaults[key];
+        if (!Array.isArray(userData[id].temp[key])) userData[id].temp[key] = [];
+        if (userData[id].finalized[key] === undefined) userData[id].finalized[key] = null;
+    }
 }
 
 function weightedRandom(arr, weights) {
@@ -133,17 +123,21 @@ async function spinCommand(msg, type) {
         const id = msg.author.id;
         ensureUser(id);
         
-        if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
+        if (userData[id].spins[type] <= 0) {
+            const embed = new EmbedBuilder()
+                .setTitle("❌ No Spins Left")
+                .setDescription(`You have run out of **${type}** spins!`)
+                .setColor(0xff0000);
+            return msg.reply({ embeds: [embed] });
+        }
 
-        let weights;
-        if (type === 'clan') weights = CLAN_RARITY_WEIGHTS;
-        else if (type.startsWith('element')) weights = ELEMENT_RARITY_WEIGHTS;
-        else weights = DEFAULT_RARITY_WEIGHTS;
+        let weights = type === 'clan' ? CLAN_RARITY_WEIGHTS : type.startsWith('element') ? ELEMENT_RARITY_WEIGHTS : DEFAULT_RARITY_WEIGHTS;
+        let pool = type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS;
 
         let result;
         let attempts = 0;
         do {
-            result = weightedRandom(type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS, weights);
+            result = weightedRandom(pool, weights);
             attempts++;
         } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
 
@@ -156,17 +150,19 @@ async function spinCommand(msg, type) {
         saveData();
 
         const embed = new EmbedBuilder()
-            .setTitle(`🎲 ${type.toUpperCase()} Spin Result`)
-            .setColor({ Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0xff4500, Rare: 0x1e90ff, Common: 0xaaaaaa }[result.rarity] || 0x000000)
-            .setDescription(`${rarityEmoji[result.rarity] || '❓'} **${result.item}** (${result.rarity})${isBackToBackDupe ? '\n*(Back-to-back Duplicate — spin refunded!)*' : ''}`)
+            .setTitle(`🎲 ${type.toUpperCase()} SPIN`)
+            .setAuthor({ name: msg.author.username, iconURL: msg.author.displayAvatarURL() })
+            .setColor(RARITY_COLORS[result.rarity] || 0x000000)
+            .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}`)
             .addFields(
-                { name: 'Spins left', value: `${userData[id].spins[type]}`, inline: true },
-                { name: 'Temp results', value: userData[id].temp[type].map(x => `${rarityEmoji[x.rarity] || ''} ${x.item}`).join(', ') || 'None', inline: false }
+                { name: '🔋 Spins Remaining', value: `\`${userData[id].spins[type]}\``, inline: true },
+                { name: '📝 Recent Results', value: userData[id].temp[type].slice(-5).map(x => `\`${x.item}\``).join(', ') || 'None', inline: false }
             )
-            .setFooter({ text: 'Click Finalize to lock your spin!' });
+            .setTimestamp()
+            .setFooter({ text: 'Click Finalize to lock this result!' });
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Primary)
+            new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success)
         );
 
         await msg.reply({ embeds: [embed], components: [row] });
@@ -187,12 +183,18 @@ client.on(Events.InteractionCreate, async interaction => {
             ensureUser(id);
 
             const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
-            userData[id].finalized[type] = lastItem ? lastItem.item : null;
+            if (!lastItem) return interaction.reply({ content: "❌ Nothing to finalize!", ephemeral: true });
 
+            userData[id].finalized[type] = lastItem.item;
             userData[id].temp[type] = []; 
             saveData();
 
-            await interaction.update({ content: `✅ You finalized your ${type}!`, embeds: [], components: [] });
+            const embed = new EmbedBuilder()
+                .setTitle("✅ Finalized!")
+                .setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`)
+                .setColor(0x00ff00);
+
+            await interaction.update({ embeds: [embed], components: [] });
         }
     } catch (err) {
         console.error("Error in button interaction:", err);
@@ -208,8 +210,6 @@ client.on('messageCreate', async msg => {
         const id = msg.author.id;
         ensureUser(id);
 
-        console.log(`Command received: ${cmd} from ${msg.author.tag}`);
-
         if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') {
             return await spinCommand(msg, cmd);
         }
@@ -219,32 +219,40 @@ client.on('messageCreate', async msg => {
             ensureUser(target.id);
             const data = userData[target.id].finalized;
             
-            const clan = data.clan || 'None';
-            const trait = data.trait || 'None';
-            const e1 = data.element1 || 'None';
-            const e2 = data.element2 || 'None';
-
             const embed = new EmbedBuilder()
-                .setTitle(`📜 ${target.username}'s Specs`)
-                .setColor(0x00ff00)
+                .setTitle(`📜 ${target.username.toUpperCase()}'S SPECS`)
+                .setThumbnail(target.displayAvatarURL())
+                .setColor(0x2f3136)
                 .addFields(
-                    { name: 'Clan', value: String(clan), inline: true },
-                    { name: 'Element 1', value: String(e1), inline: true },
-                    { name: 'Element 2', value: String(e2), inline: true },
-                    { name: 'Trait', value: String(trait), inline: true }
-                );
+                    { name: '⛩️ Clan', value: `\`${data.clan || 'None'}\``, inline: true },
+                    { name: '✨ Trait', value: `\`${data.trait || 'None'}\``, inline: true },
+                    { name: '\u200B', value: '\u200B', inline: false },
+                    { name: '🔥 Element 1', value: `\`${data.element1 || 'None'}\``, inline: true },
+                    { name: '🌊 Element 2', value: `\`${data.element2 || 'None'}\``, inline: true }
+                )
+                .setFooter({ text: "Use !clan, !element1, !element2, or !trait to spin!" })
+                .setTimestamp();
 
             return await msg.reply({ embeds: [embed] });
         }
 
         if (cmd === 'cmds') {
-            return await msg.reply(`**Commands:** !clan !element1 !element2 !trait !check @User !cmds !announce [message]`);
+            const embed = new EmbedBuilder()
+                .setTitle("🎮 BOT COMMANDS")
+                .setColor(0x7289da)
+                .setDescription("Here are the available commands for the bot:")
+                .addFields(
+                    { name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false },
+                    { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false },
+                    { name: '📢 Staff', value: "`!announce [message]`", inline: false }
+                );
+            return await msg.reply({ embeds: [embed] });
         }
 
         if (cmd === 'announce') {
             const text = args.join(' ');
             if (!text) return await msg.reply('❌ Provide a message to announce.');
-            const embed = new EmbedBuilder().setDescription(text).setColor(0xffc107);
+            const embed = new EmbedBuilder().setTitle("📢 ANNOUNCEMENT").setDescription(text).setColor(0xffc107).setTimestamp();
             return await msg.reply({ embeds: [embed] });
         }
     } catch (err) {
@@ -252,11 +260,5 @@ client.on('messageCreate', async msg => {
     }
 });
 
-client.once('ready', () => {
-    console.log(`Logged in as ${client.user.tag}!`);
-});
-
-// ---------------- LOGIN ----------------
-client.login(process.env.BOT_TOKEN).catch(err => {
-    console.error("Failed to login:", err);
-});
+client.once('ready', () => { console.log(`Logged in as ${client.user.tag}!`); });
+client.login(process.env.BOT_TOKEN).catch(err => { console.error("Failed to login:", err); });

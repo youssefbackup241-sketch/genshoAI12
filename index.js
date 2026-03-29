@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const fs = require('fs');
 const client = new Client({ 
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -46,13 +46,19 @@ const maxFinal = { element: 2, clan: 1, trait: 1 };
 
 // ----- HELPERS -----
 function saveDB() { fs.writeFileSync(databaseFile, JSON.stringify(db, null, 2)); }
+
+// Weighted rarity pick
 function pickRarityWeighted(obj) {
-    const pool = [];
-    for(const rarity in obj) {
-        const weight = rarity === "Mythical" ? 1 : rarity === "Legendary" ? 2 : rarity === "Epic" ? 3 : 4;
-        obj[rarity].forEach(item=> { for(let i=0;i<weight;i++) pool.push({name:item, rarity}); });
-    }
-    return pool[Math.floor(Math.random()*pool.length)];
+    const roll = Math.random()*100;
+    let rarity;
+    if(roll<1) rarity="Mythical";
+    else if(roll<6) rarity="Legendary";
+    else if(roll<21) rarity="Epic";
+    else if(roll<50) rarity="Rare";
+    else rarity="Common";
+    const pool = obj[rarity];
+    const picked = pool[Math.floor(Math.random()*pool.length)];
+    return {name:picked, rarity};
 }
 
 // ----- COMMANDS -----
@@ -98,7 +104,6 @@ client.on('messageCreate', async msg=>{
         if(!db[user.id]||!db[user.id].finalized) return msg.reply("No finalized data for this user!");
         const data = db[user.id].finalized;
         const embed = new EmbedBuilder()
-            .setTitle(`${user.username}'s OC`)
             .setDescription(`**Clan:** ${data.clan||'None'}\n**Elements:** ${data.element.join(', ')||'None'}\n**Trait:** ${data.trait||'None'}`)
             .setColor(0xFFD700);
         msg.channel.send({embeds:[embed]});
@@ -109,7 +114,6 @@ client.on('messageCreate', async msg=>{
         const text = args.join(" ");
         if(!text) return msg.reply("Message required!");
         const embed = new EmbedBuilder()
-            .setTitle("Announcement")
             .setDescription(text)
             .setColor(0x00FFFF);
         msg.channel.send({embeds:[embed]});
@@ -143,8 +147,39 @@ client.on('messageCreate', async msg=>{
             saveDB();
             msg.reply(`Added ${count} ${type} spins to ${user.username}`);
         }
+
+        // Fully working !setspec
         if(cmd==="!setspec"){
-            msg.reply("Please implement interactive selection via followup or buttons in your server.");
+            const filterStaff = m=>m.author.id===msg.author.id;
+            msg.channel.send("Who is the user? Mention them").then(async()=>{
+                const collectedUser = await msg.channel.awaitMessages({filter:filterStaff,max:1,time:30000});
+                if(!collectedUser.size) return msg.reply("No user selected");
+                const user = collectedUser.first().mentions.users.first();
+                if(!user) return msg.reply("Invalid user");
+
+                msg.channel.send("Which category? (clan / element / trait)").then(async()=>{
+                    const collectedCat = await msg.channel.awaitMessages({filter:filterStaff,max:1,time:30000});
+                    if(!collectedCat.size) return msg.reply("No category selected");
+                    const cat = collectedCat.first().content.toLowerCase();
+                    let optionsList;
+                    if(cat==="clan") optionsList = Object.values(clans).flat();
+                    else if(cat==="element") optionsList = Object.values(elements).flat();
+                    else if(cat==="trait") optionsList = Object.values(traits).flat();
+                    else return msg.reply("Invalid category");
+
+                    const embed = new EmbedBuilder().setTitle(`Choose ${cat}`).setDescription(optionsList.map((o,i)=>`${i+1}. ${o}`).join("\n"));
+                    await msg.channel.send({embeds:[embed]});
+                    const collectedOpt = await msg.channel.awaitMessages({filter:filterStaff,max:1,time:30000});
+                    if(!collectedOpt.size) return msg.reply("No option selected");
+                    const choice = optionsList[parseInt(collectedOpt.first().content)-1];
+                    if(!db[user.id]) db[user.id]={spins:{element:[],clan:[],trait:[]},finalized:{element:[],clan:null,trait:null}};
+                    if(cat==="element"){
+                        if(db[user.id].finalized.element.length<maxFinal.element) db[user.id].finalized.element.push(choice);
+                    } else db[user.id].finalized[cat]=choice;
+                    saveDB();
+                    msg.channel.send(`Set ${user.username}'s ${cat} to ${choice}`);
+                });
+            });
         }
     }
 });

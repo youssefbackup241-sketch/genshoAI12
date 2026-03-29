@@ -1,175 +1,179 @@
 // index.js
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, InteractionType, REST, Routes, SlashCommandBuilder } = require('discord.js');
+require('dotenv').config();
+
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
+
 const token = process.env.BOT_TOKEN;
+const dbFile = './database.json';
 
+// Load or create database
 let userData = {};
-const dbFile = './db.json';
-
-// Load database
 if (fs.existsSync(dbFile)) userData = JSON.parse(fs.readFileSync(dbFile));
+else fs.writeFileSync(dbFile, JSON.stringify(userData, null, 2));
 
-// Save database
-function saveData() { fs.writeFileSync(dbFile, JSON.stringify(userData, null, 2)); }
+function saveDB() { fs.writeFileSync(dbFile, JSON.stringify(userData, null, 2)); }
 
-// Ensure user entry
 function ensureUser(id) {
-    if (!userData[id]) userData[id] = {
-        spins: { clan: 15, element: 5, trait: 5 },
-        finalized: { clan: null, element: [], trait: null },
-        temp: { clan: [], element: [], trait: [] }
-    };
-}
-
-// Items
-const CLANS = [
-    { name: "Ōtsutsuki", rarity: "Mythical", emoji:"👑", weight:1 },
-    { name: "Kaguya", rarity: "Mythical", emoji:"🛡️", weight:1 },
-    { name: "Uchiha", rarity:"Legendary", emoji:"🔥", weight:5 },
-    { name: "Senju", rarity:"Legendary", emoji:"🌳", weight:5 },
-    { name: "Hyuga", rarity:"Legendary", emoji:"👁️", weight:5 },
-    { name: "Uzumaki", rarity:"Legendary", emoji:"🌀", weight:5 },
-    { name: "Yuki", rarity:"Epic", emoji:"❄️", weight:10 },
-    { name: "Hozuki", rarity:"Epic", emoji:"💧", weight:10 },
-    { name: "Hoshigaki", rarity:"Epic", emoji:"🌑", weight:10 },
-    { name: "Chinoike", rarity:"Epic", emoji:"🩸", weight:10 },
-    { name: "Jugo", rarity:"Epic", emoji:"🪨", weight:10 },
-    { name: "Kurama", rarity:"Epic", emoji:"🦊", weight:10 },
-    { name: "Sabaku", rarity:"Epic", emoji:"🏜️", weight:10 },
-    { name: "Shirogane", rarity:"Rare", emoji:"⚪", weight:20 },
-    { name: "Yotsuki", rarity:"Rare", emoji:"🟡", weight:20 },
-    { name: "Fūma", rarity:"Rare", emoji:"🐉", weight:20 },
-    { name: "Iburi", rarity:"Rare", emoji:"💨", weight:20 },
-    { name: "Hatake", rarity:"Rare", emoji:"🗡️", weight:20 },
-    { name: "Kamizuru", rarity:"Rare", emoji:"🕊️", weight:20 },
-    { name: "Sarutobi", rarity:"Rare", emoji:"🙈", weight:20 },
-    { name: "Aburame", rarity:"Common", emoji:"🐜", weight:50 },
-    { name: "Akimichi", rarity:"Common", emoji:"🍗", weight:50 },
-    { name: "Nara", rarity:"Common", emoji:"🦝", weight:50 },
-    { name: "Yamanaka", rarity:"Common", emoji:"🧠", weight:50 },
-    { name: "Inuzuka", rarity:"Common", emoji:"🐕", weight:50 },
-    { name: "Shimura", rarity:"Common", emoji:"👴", weight:50 },
-    { name: "Lee", rarity:"Common", emoji:"💪", weight:50 }
-];
-
-const ELEMENTS = [
-    { name:"Wood", rarity:"Rare", emoji:"🌳", weight:15 },
-    { name:"Fire", rarity:"Rare", emoji:"🔥", weight:25 },
-    { name:"Water", rarity:"Rare", emoji:"💧", weight:25 },
-    { name:"Earth", rarity:"Rare", emoji:"🪨", weight:25 },
-    { name:"Wind", rarity:"Rare", emoji:"🌪️", weight:25 },
-    { name:"Lightning", rarity:"Rare", emoji:"⚡", weight:25 },
-    { name:"Yin", rarity:"Mythical", emoji:"☯️", weight:1 },
-    { name:"Yang", rarity:"Mythical", emoji:"☯️", weight:1 },
-    { name:"Chaos", rarity:"Mythical", emoji:"🌀", weight:1 },
-    { name:"Order", rarity:"Mythical", emoji:"🔱", weight:1 }
-];
-
-const TRAITS = [
-    { name:'Analytical Eye', rarity:'Legendary', emoji:'👁️', weight:2 },
-    { name:'Jutsu Amplification', rarity:'Legendary', emoji:'⚡', weight:2 },
-    { name:'Elemental Affinity Mastery', rarity:'Epic', emoji:'🔥', weight:10 },
-    { name:'Illusion/Genjutsu Potency', rarity:'Epic', emoji:'🌀', weight:10 },
-    { name:'Kekkei Genkai Proficiency', rarity:'Legendary', emoji:'🧬', weight:2 },
-    { name:'Fuinjutsu Technique Expertise', rarity:'Rare', emoji:'📦', weight:20 },
-    { name:'Iryojutsu Proficiency', rarity:'Epic', emoji:'💉', weight:10 },
-    { name:'Scientist', rarity:'Rare', emoji:'🔬', weight:20 },
-    { name:'Superhuman Physique', rarity:'Rare', emoji:'💪', weight:20 }
-];
-
-// Weighted random function
-function weightedRandom(array) {
-    const total = array.reduce((acc, i) => acc + i.weight, 0);
-    let r = Math.random() * total;
-    for (let i of array) {
-        r -= i.weight;
-        if (r <= 0) return i;
+    if (!userData[id]) {
+        userData[id] = {
+            spins: { clan: 15, element: 5, trait: 5 },
+            finalized: { clan: null, element: [], trait: null },
+            pending: { clan: [], element: [], trait: [] }
+        };
+        saveDB();
     }
 }
 
-// Send spin embed
+// Your Rarities + Emojis
+const clans = [
+    { name: "Ōtsutsuki", rarity: 1, emoji: "👹" },
+    { name: "Uchiha", rarity: 5, emoji: "🗡️" },
+    { name: "Senju", rarity: 5, emoji: "🌲" },
+    { name: "Hyuga", rarity: 5, emoji: "👁️" },
+    { name: "Uzumaki", rarity: 5, emoji: "🔴" },
+    // Add Epic/Rare/Common here with rarities
+];
+const elements = [
+    { name: "Wood", rarity: 1, emoji: "🌳" },
+    { name: "Fire", rarity: 10, emoji: "🔥" },
+    { name: "Water", rarity: 10, emoji: "💧" },
+    { name: "Earth", rarity: 10, emoji: "🌍" },
+    { name: "Wind", rarity: 10, emoji: "🌬️" },
+    { name: "Lightning", rarity: 10, emoji: "⚡" },
+    { name: "Yin", rarity: 1, emoji: "🌑" },
+    { name: "Yang", rarity: 1, emoji: "☀️" },
+    { name: "Chaos", rarity: 1, emoji: "🌪️" },
+    { name: "Order", rarity: 1, emoji: "🔷" },
+];
+const traits = [
+    { name: "Analytical Eye", rarity: 5, emoji: "👁️‍🗨️" },
+    { name: "Jutsu Amplification", rarity: 5, emoji: "⚡" },
+    { name: "Elemental Affinity Mastery", rarity: 10, emoji: "🔥💧🌳" },
+    { name: "Illusion/Genjutsu Potency", rarity: 10, emoji: "💭" },
+    { name: "Kekkei Genkai Proficiency", rarity: 5, emoji: "🧬" },
+    { name: "Fuinjutsu Technique Expertise", rarity: 20, emoji: "📜" },
+    { name: "Iryojutsu Proficiency", rarity: 10, emoji: "💉" },
+];
+
+// Weighted random function
+function weightedRandom(arr) {
+    const total = arr.reduce((sum, item) => sum + item.rarity, 0);
+    let rand = Math.floor(Math.random() * total);
+    for (let item of arr) {
+        if (rand < item.rarity) return item;
+        rand -= item.rarity;
+    }
+    return arr[arr.length - 1];
+}
+
+// Send Spin Embed
 async function sendSpin(interaction, type) {
     const id = interaction.user.id;
     ensureUser(id);
 
-    if (userData[id].spins[type] <= 0) return interaction.reply({ content: `❌ No ${type} spins left!`, ephemeral:true });
+    if (userData[id].spins[type] <= 0) return interaction.reply({ content: `No ${type} spins left!`, ephemeral: true });
 
-    let pool = type === 'clan' ? CLANS : type==='element'? ELEMENTS : TRAITS;
-    let result = weightedRandom(pool);
+    const pool = type === 'clan' ? clans : type === 'element' ? elements : traits;
+    const spin = weightedRandom(pool);
 
-    // Duplicate handling
-    let already = type==='element'? userData[id].temp.element : userData[id].temp[type];
-    if (already.includes(result.name)) {
-        userData[id].spins[type] +=1; // give extra spin
-    } else {
-        if (type==='element') userData[id].temp.element.push(result.name);
-        else userData[id].temp[type].push(result.name);
+    // Duplicate protection: max 2
+    const pendingList = userData[id].pending[type];
+    const finalizedList = userData[id].finalized[type];
+    if ((type === 'element' && [...pendingList, ...finalizedList].filter(e => e.name === spin.name).length >= 2) ||
+        (type !== 'element' && [...pendingList, ...finalizedList].some(e => e.name === spin.name))) {
+        userData[id].spins[type]++; // give extra spin
+        saveDB();
+        return interaction.reply({ content: `Duplicate detected! Extra spin awarded.`, ephemeral: true });
     }
+
+    pendingList.push(spin);
     userData[id].spins[type]--;
+    saveDB();
 
     const embed = new EmbedBuilder()
-        .setTitle(`🎰 ${type.toUpperCase()} Spin`)
-        .setDescription(`${result.emoji} **${result.name}** (${result.rarity})\nSpins left: ${userData[id].spins[type]}`)
-        .setColor('#00FF00');
-    
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success)
-    );
+        .setTitle(`${type.toUpperCase()} SPIN!`)
+        .setDescription(`You spun: ${spin.emoji} **${spin.name}**\nRemaining Spins: ${userData[id].spins[type]}`)
+        .setColor('#00FFFF');
 
-    await interaction.reply({ embeds:[embed], components:[row], ephemeral:true });
-    saveData();
+    const row = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`finalize_${type}`)
+                .setLabel('Finalize')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
 }
 
-// Finalize button
-client.on('interactionCreate', async interaction=>{
-    if (!interaction.isButton()) return;
-    const id = interaction.user.id;
-    ensureUser(id);
-    const type = interaction.customId.replace('finalize_','');
-    if (!['clan','element','trait'].includes(type)) return;
+// Button interaction
+client.on('interactionCreate', async interaction => {
+    if (interaction.isButton()) {
+        const id = interaction.user.id;
+        ensureUser(id);
 
-    const temp = type==='element'? userData[id].temp.element : userData[id].temp[type];
-    if (temp.length===0) return interaction.update({ content:`❌ No ${type} to finalize!`, embeds:[], components:[] });
+        const [action, type] = interaction.customId.split('_');
+        if (action === 'finalize') {
+            const pending = userData[id].pending[type];
+            if (!pending.length) return interaction.reply({ content: 'No spins to finalize.', ephemeral: true });
 
-    if (type==='element') userData[id].finalized.element = Array.from(new Set(temp)).slice(0,2);
-    else userData[id].finalized[type] = temp[0];
-    if(type==='element') userData[id].temp.element=[];
-    else userData[id].temp[type]=[];
+            if (type === 'element') {
+                userData[id].finalized[type] = pending.slice(0, 2);
+            } else {
+                userData[id].finalized[type] = pending[0];
+            }
 
-    saveData();
-    interaction.update({ content:`✅ Your ${type} has been finalized!`, embeds:[], components:[] });
+            userData[id].pending[type] = [];
+            saveDB();
+
+            await interaction.update({ content: `✅ Your ${type} has been finalized!`, embeds: [], components: [] });
+        }
+    }
 });
 
-// Commands
-client.on('messageCreate', async message=>{
-    if (message.author.bot) return;
-    const args = message.content.split(' ');
-    const cmd = args.shift().toLowerCase();
+// Slash command registration
+const commands = [
+    new SlashCommandBuilder().setName('clan').setDescription('Spin a clan'),
+    new SlashCommandBuilder().setName('element').setDescription('Spin an element'),
+    new SlashCommandBuilder().setName('trait').setDescription('Spin a trait'),
+    new SlashCommandBuilder().setName('check').setDescription('Check your finalized specs'),
+    new SlashCommandBuilder()
+        .setName('announce')
+        .setDescription('Send an announcement')
+        .addStringOption(option => option.setName('message').setDescription('Announcement message').setRequired(true)),
+].map(c => c.toJSON());
 
-    ensureUser(message.author.id);
+client.once('ready', async () => {
+    console.log(`Logged in as ${client.user.tag}`);
 
-    if(cmd==='!clan'||cmd==='!element'||cmd==='!trait'){
-        sendSpin(message, cmd.slice(1));
-    }
+    const rest = new REST({ version: '10' }).setToken(token);
+    await rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands });
+});
 
-    if(cmd==='!check'){
-        const id = message.mentions.users.first()? message.mentions.users.first().id : message.author.id;
-        ensureUser(id);
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+    const id = interaction.user.id;
+    ensureUser(id);
+
+    if (interaction.commandName === 'clan') await sendSpin(interaction, 'clan');
+    if (interaction.commandName === 'element') await sendSpin(interaction, 'element');
+    if (interaction.commandName === 'trait') await sendSpin(interaction, 'trait');
+    if (interaction.commandName === 'check') {
         const data = userData[id].finalized;
         const embed = new EmbedBuilder()
-            .setTitle(`${message.mentions.users.first()? message.mentions.users.first().username : message.author.username}'s Specs`)
-            .setColor('#FFD700')
-            .setDescription(`**Clan:** ${data.clan||'None'}\n**Elements:** ${data.element.length?data.element.join(', '):'None'}\n**Trait:** ${data.trait||'None'}`);
-        message.reply({ embeds:[embed] });
+            .setTitle(`${interaction.user.username}'s Specs`)
+            .setDescription(`**Clan:** ${data.clan ? `${data.clan.emoji} ${data.clan.name}` : 'None'}\n**Elements:** ${data.element.length ? data.element.map(e => `${e.emoji} ${e.name}`).join(', ') : 'None'}\n**Trait:** ${data.trait ? `${data.trait.emoji} ${data.trait.name}` : 'None'}`)
+            .setColor('#FFD700');
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
-
-    if(cmd==='!announce'){
-        const content = args.join(' ');
-        const embed = new EmbedBuilder()
-            .setDescription(content)
-            .setColor('#00FFFF');
-        message.channel.send({ embeds:[embed] });
+    if (interaction.commandName === 'announce') {
+        const content = interaction.options.getString('message');
+        const embed = new EmbedBuilder().setDescription(content).setColor('#00FFFF');
+        await interaction.reply({ embeds: [embed] });
     }
 });
 

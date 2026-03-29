@@ -1,14 +1,18 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const fs = require('fs');
+// index.js
+require("dotenv").config();
+const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } = require("discord.js");
+const fs = require("fs");
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  partials: [Partials.Channel]
+});
 
-// ----- DATA -----
+// ---- DATA ----
 const CLANS = [
-  { name: "Ōtsutsuki", rarity: "Mythical", emoji: "🌌" },
-  { name: "Kaguya", rarity: "Mythical", emoji: "👑" },
-  { name: "Uchiha", rarity: "Legendary", emoji: "🔥" },
+  { name: "Ōtsutsuki", rarity: "Mythical", emoji: "👹" },
+  { name: "Kaguya", rarity: "Mythical", emoji: "👺" },
+  { name: "Uchiha", rarity: "Legendary", emoji: "🦅" },
   { name: "Senju", rarity: "Legendary", emoji: "🌲" },
   { name: "Hyuga", rarity: "Legendary", emoji: "👁️" },
   { name: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
@@ -16,186 +20,174 @@ const CLANS = [
   { name: "Hozuki", rarity: "Epic", emoji: "💧" },
   { name: "Hoshigaki", rarity: "Epic", emoji: "🌑" },
   { name: "Chinoike", rarity: "Epic", emoji: "🩸" },
-  { name: "Jugo", rarity: "Epic", emoji: "🟣" },
+  { name: "Jugo", rarity: "Epic", emoji: "🌿" },
   { name: "Kurama", rarity: "Epic", emoji: "🦊" },
   { name: "Sabaku", rarity: "Epic", emoji: "🏜️" },
   { name: "Shirogane", rarity: "Rare", emoji: "⚪" },
-  { name: "Yotsuki", rarity: "Rare", emoji: "🟡" },
+  { name: "Yotsuki", rarity: "Rare", emoji: "✴️" },
   { name: "Fūma", rarity: "Rare", emoji: "🗡️" },
   { name: "Iburi", rarity: "Rare", emoji: "💨" },
-  { name: "Hatake", rarity: "Rare", emoji: "👨‍🌾" },
+  { name: "Hatake", rarity: "Rare", emoji: "🪓" },
   { name: "Kamizuru", rarity: "Rare", emoji: "🦅" },
   { name: "Sarutobi", rarity: "Rare", emoji: "🐒" },
-  { name: "Aburame", rarity: "Common", emoji: "🐜" },
+  { name: "Aburame", rarity: "Common", emoji: "🐛" },
   { name: "Akimichi", rarity: "Common", emoji: "🍗" },
-  { name: "Nara", rarity: "Common", emoji: "🦌" },
+  { name: "Nara", rarity: "Common", emoji: "🦉" },
   { name: "Yamanaka", rarity: "Common", emoji: "🧠" },
   { name: "Inuzuka", rarity: "Common", emoji: "🐕" },
-  { name: "Shimura", rarity: "Common", emoji: "🏯" },
-  { name: "Lee", rarity: "Common", emoji: "🥋" }
+  { name: "Shimura", rarity: "Common", emoji: "👴" },
+  { name: "Lee", rarity: "Common", emoji: "🥷" },
 ];
 
 const ELEMENTS = [
-  { name: "Wood", rarity: "Legendary", emoji: "🌳" },
+  { name: "Yin", rarity: "Mythical", emoji: "☯️" },
+  { name: "Yang", rarity: "Mythical", emoji: "☯️" },
+  { name: "Chaos", rarity: "Mythical", emoji: "💀" },
+  { name: "Order", rarity: "Mythical", emoji: "⚖️" },
+  { name: "Wood", rarity: "Rare", emoji: "🌳" },
   { name: "Fire", rarity: "Rare", emoji: "🔥" },
   { name: "Water", rarity: "Rare", emoji: "💧" },
-  { name: "Earth", rarity: "Rare", emoji: "🪨" },
-  { name: "Wind", rarity: "Rare", emoji: "💨" },
+  { name: "Earth", rarity: "Rare", emoji: "🌍" },
+  { name: "Wind", rarity: "Rare", emoji: "🌪️" },
   { name: "Lightning", rarity: "Rare", emoji: "⚡" },
-  { name: "Yin", rarity: "Mythical", emoji: "🌑" },
-  { name: "Yang", rarity: "Mythical", emoji: "🌕" },
-  { name: "Chaos", rarity: "Mythical", emoji: "🌀" },
-  { name: "Order", rarity: "Mythical", emoji: "⚖️" }
 ];
 
 const TRAITS = [
-  { name: "Analytical Eye", rarity: "Legendary", emoji: "👁️" },
-  { name: "Clan Specialist", rarity: "Mythical", emoji: "🦸" },
+  { name: "Analytical Eye", rarity: "Legendary", emoji: "👁️‍🗨️" },
   { name: "Jutsu Amplification", rarity: "Legendary", emoji: "💥" },
-  { name: "Elemental Affinity Mastery", rarity: "Epic", emoji: "🌪️" },
-  { name: "Illusion/Genjutsu Potency", rarity: "Epic", emoji: "🌀" },
-  { name: "Kekkei Genkai Proficiency", rarity: "Legendary", emoji: "✨" },
-  { name: "Fuinjutsu Technique Expertise", rarity: "Rare", emoji: "🛡️" },
-  { name: "Iryojutsu Proficiency", rarity: "Epic", emoji: "🩹" },
-  { name: "Scientist", rarity: "Rare", emoji: "🧪" },
-  { name: "Superhuman Physique", rarity: "Rare", emoji: "💪" }
+  { name: "Elemental Affinity Mastery", rarity: "Epic", emoji: "🔮" },
+  { name: "Illusion/Genjutsu Potency", rarity: "Epic", emoji: "🌫️" },
+  { name: "Kekkei Genkai Proficiency", rarity: "Legendary", emoji: "🧬" },
+  { name: "Fuinjutsu Technique Expertise", rarity: "Rare", emoji: "📜" },
+  { name: "Iryojutsu Proficiency", rarity: "Epic", emoji: "💉" },
+  { name: "Scientist", rarity: "Rare", emoji: "🔬" },
+  { name: "Superhuman Physique", rarity: "Rare", emoji: "💪" },
 ];
 
-// ----- UTILITY -----
+// Save finalized specs in memory
+let users = {};
+
+// ---- UTILITIES ----
 function getRandomItem(array) {
-  const chanceRoll = Math.random() * 100;
-  let pool = [];
-  for (const item of array) {
-    let chance = 0;
+  const roll = Math.random() * 100;
+  // Chance table: Mythical 1%, Legendary 5%, Epic 15%, Rare 25%, Common 54%
+  for (let i = 0; i < array.length; i++) {
+    let item = array[i];
+    let chance;
     switch (item.rarity) {
       case "Mythical": chance = 1; break;
       case "Legendary": chance = 5; break;
       case "Epic": chance = 15; break;
-      case "Rare": chance = 30; break;
-      case "Common": chance = 49; break;
+      case "Rare": chance = 25; break;
+      case "Common": chance = 54; break;
     }
-    for (let i = 0; i < chance; i++) pool.push(item);
+    if (roll <= chance) return item;
   }
-  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : array[Math.floor(Math.random() * array.length)];
+  return array[Math.floor(Math.random() * array.length)];
 }
 
-// ----- STORAGE -----
-let users = {};
-const DATA_FILE = './users.json';
-if (fs.existsSync(DATA_FILE)) users = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+function getUser(id) {
+  if (!users[id]) users[id] = { clan: null, trait: null, elements: [], spins: { clan: 10, element: 10, trait: 5 } };
+  return users[id];
+}
 
-function saveData() { fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2)); }
+// ---- SPIN HANDLER ----
+async function handleSpin(interaction, type) {
+  const user = getUser(interaction.user.id);
 
-// ----- SPIN LOGIC -----
-function spinCategory(userId, category, amount) {
-  if (!users[userId]) users[userId] = { spins: { clan: 10, element: 10, trait: 5 }, finalized: { clan: [], element: [], trait: [] } };
-  let spinsLeft = users[userId].spins[category];
-  if (spinsLeft <= 0) return null;
+  if (user.spins[type] <= 0) return interaction.reply({ content: `No ${type} spins left!`, ephemeral: true });
 
-  const dataArray = category === "clan" ? CLANS : category === "element" ? ELEMENTS : TRAITS;
-  const results = [];
-  for (let i = 0; i < amount; i++) {
-    if (users[userId].spins[category] <= 0) break;
-    let item = getRandomItem(dataArray);
+  let array;
+  if (type === "clan") array = CLANS;
+  else if (type === "element") array = ELEMENTS;
+  else if (type === "trait") array = TRAITS;
 
-    // DUPLICATE PROTECTION
-    let finalized = users[userId].finalized[category].map(f => f.name);
-    let sameCount = finalized.filter(n => n === item.name).length;
-    if (sameCount >= 2) {
-      users[userId].spins[category] += 1; // give extra spin
-      continue;
+  let results = [];
+  let spinsToRoll = type === "element" ? 2 : 1;
+
+  for (let i = 0; i < spinsToRoll; i++) {
+    let item = getRandomItem(array);
+    // Duplicate check
+    let duplicate = results.find(r => r.name === item.name);
+    if (duplicate) {
+      user.spins[type] += 1; // give 1 extra spin for duplicate
+      if (results.filter(r => r.name === item.name).length >= 2) continue; // max 2 duplicates
     }
-
     results.push(item);
-    users[userId].spins[category] -= 1;
   }
 
-  saveData();
-  return results;
+  user.spins[type] -= 1;
+  const embed = new EmbedBuilder()
+    .setTitle(`${interaction.user.username} spun ${type}!`)
+    .setDescription(results.map(r => `${r.emoji} ${r.name} (${r.rarity})`).join("\n"))
+    .setFooter({ text: `Spins left: ${user.spins[type]}` })
+    .setColor("Random");
+
+  const finalizeButton = new ActionRowBuilder()
+    .addComponents(new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel("Finalize").setStyle(ButtonStyle.Primary));
+
+  await interaction.reply({ embeds: [embed], components: [finalizeButton] });
 }
 
-// ----- COMMANDS -----
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  const prefix = "!";
-  if (!message.content.startsWith(prefix)) return;
+// ---- COMMANDS ----
+client.on(Events.MessageCreate, async message => {
+  if (!message.content.startsWith("!")) return;
 
-  const args = message.content.slice(prefix.length).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
+  const args = message.content.slice(1).split(" ");
+  const cmd = args.shift().toLowerCase();
 
-  const userId = message.author.id;
-  if (!users[userId]) users[userId] = { spins: { clan: 10, element: 10, trait: 5 }, finalized: { clan: [], element: [], trait: [] } };
+  const user = getUser(message.author.id);
 
-  if (command === "clan" || command === "element" || command === "trait") {
-    let results = spinCategory(userId, command, 1);
-    if (!results || results.length === 0) return message.reply("No spins left!");
-
-    const embed = new EmbedBuilder()
-      .setTitle(`🎰 ${command.toUpperCase()} Spin`)
-      .setDescription(results.map(r => `${r.emoji} **${r.name}** (${r.rarity})`).join("\n"))
-      .addFields({ name: "Spins Left", value: `${users[userId].spins[command]}` })
-      .setColor("Random");
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`finalize_${command}_${userId}`)
-        .setLabel("Finalize")
-        .setStyle(ButtonStyle.Success)
-    );
-
-    await message.reply({ embeds: [embed], components: [row] });
+  if (cmd === "cmds") {
+    message.reply(`Commands:\n!spin clan\n!spin element\n!spin trait\n!check\n!announce <message>`);
   }
 
-  if (command === "check") {
-    const data = users[userId].finalized;
+  else if (cmd === "spin") {
+    const type = args[0];
+    if (!["clan", "element", "trait"].includes(type)) return message.reply("Invalid spin type!");
+    handleSpin(message, type);
+  }
+
+  else if (cmd === "check") {
     const embed = new EmbedBuilder()
-      .setTitle(`${message.author.username}'s Finalized Specs`)
+      .setTitle(`${message.author.username}'s Specs`)
       .setDescription(
-        `**Clans:** ${data.clan.map(c => c.emoji + " " + c.name).join(", ") || "None"}\n` +
-        `**Elements:** ${data.element.map(c => c.emoji + " " + c.name).join(", ") || "None"}\n` +
-        `**Traits:** ${data.trait.map(c => c.emoji + " " + c.name).join(", ") || "None"}`
+        `Clan: ${user.clan ? user.clan.emoji + " " + user.clan.name : "None"}\n` +
+        `Trait: ${user.trait ? user.trait.emoji + " " + user.trait.name : "None"}\n` +
+        `Elements: ${user.elements.length ? user.elements.map(e => e.emoji + " " + e.name).join(", ") : "None"}`
       )
       .setColor("Random");
     message.reply({ embeds: [embed] });
   }
 
-  if (command === "cmds") {
+  else if (cmd === "announce") {
     const embed = new EmbedBuilder()
-      .setTitle("Command List")
-      .setDescription("!clan | !element | !trait | !check | !cmds | !announce")
-      .setColor("Blue");
-    message.reply({ embeds: [embed] });
-  }
-
-  if (command === "announce") {
-    const text = args.join(" ");
-    if (!text) return message.reply("Provide a message to announce.");
-    const embed = new EmbedBuilder()
-      .setDescription(text)
-      .setColor("Green");
+      .setDescription(args.join(" "))
+      .setColor("Random");
     message.channel.send({ embeds: [embed] });
   }
 });
 
-// ----- BUTTON INTERACTIONS -----
-client.on('interactionCreate', async interaction => {
+// ---- BUTTON INTERACTIONS ----
+client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
-  const [action, category, uid] = interaction.customId.split("_");
-  if (action !== "finalize") return;
 
-  if (interaction.user.id !== uid) return interaction.reply({ content: "This isn't your spin!", ephemeral: true });
+  const user = getUser(interaction.user.id);
+  const [action, type] = interaction.customId.split("_");
 
-  const results = spinCategory(uid, category, 0); // nothing new, just finalize previous
-  if (!results) return interaction.reply({ content: "No spins to finalize!", ephemeral: true });
+  if (action === "finalize") {
+    let lastSpun;
+    if (type === "clan") lastSpun = getRandomItem(CLANS);
+    else if (type === "trait") lastSpun = getRandomItem(TRAITS);
+    else if (type === "element") lastSpun = [getRandomItem(ELEMENTS), getRandomItem(ELEMENTS)];
 
-  const lastItem = users[uid].spins[category] < 10 ? null : getRandomItem(category === "clan" ? CLANS : category === "element" ? ELEMENTS : TRAITS);
-  if (lastItem && !users[uid].finalized[category].some(f => f.name === lastItem.name)) {
-    users[uid].finalized[category].push(lastItem);
-    saveData();
+    if (type === "clan") user.clan = lastSpun;
+    else if (type === "trait") user.trait = lastSpun;
+    else if (type === "element") user.elements = lastSpun;
+
+    await interaction.update({ content: `You finalized your ${type}!`, embeds: [], components: [] });
   }
-
-  await interaction.update({ content: `✅ Finalized your ${category}!`, components: [] });
 });
 
-// ----- LOGIN -----
+// ---- LOGIN ----
 client.login(process.env.DISCORD_TOKEN);

@@ -91,26 +91,33 @@ function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = { 
             spins: { clan: 15, element1: 6, element2: 6, trait: 3 }, 
+            luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0 },
             temp: { clan: [], element1: [], element2: [], trait: [] }, 
             finalized: { clan: null, element1: null, element2: null, trait: null } 
         };
     }
     if (!userData[id].spins) userData[id].spins = {};
+    if (!userData[id].luckySpins) userData[id].luckySpins = {};
     if (!userData[id].temp) userData[id].temp = {};
     if (!userData[id].finalized) userData[id].finalized = {};
 
     const defaults = { clan: 15, element1: 6, element2: 6, trait: 3 };
     for (const key in defaults) {
         if (userData[id].spins[key] === undefined) userData[id].spins[key] = defaults[key];
+        if (userData[id].luckySpins[key] === undefined) userData[id].luckySpins[key] = 0;
         if (!Array.isArray(userData[id].temp[key])) userData[id].temp[key] = [];
         if (userData[id].finalized[key] === undefined) userData[id].finalized[key] = null;
     }
 }
 
-function weightedRandom(arr, weights) {
+function weightedRandom(arr, weights, isLucky) {
     const pool = [];
     for (let obj of arr) {
-        const weight = weights[obj.rarity] || 1;
+        let weight = weights[obj.rarity] || 1;
+        // 2x odds for non-common tiers if lucky
+        if (isLucky && obj.rarity !== 'Common') {
+            weight *= 2;
+        }
         const count = Math.max(1, Math.round(weight * 10));
         for (let i = 0; i < count; i++) pool.push(obj);
     }
@@ -148,10 +155,13 @@ async function spinCommand(msg, type) {
         let weights = type === 'clan' ? CLAN_RARITY_WEIGHTS : type.startsWith('element') ? ELEMENT_RARITY_WEIGHTS : DEFAULT_RARITY_WEIGHTS;
         let pool = type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS;
 
+        // Check for Lucky Spin
+        const isLucky = userData[id].luckySpins[type] > 0;
+
         let result;
         let attempts = 0;
         do {
-            result = weightedRandom(pool, weights);
+            result = weightedRandom(pool, weights, isLucky);
             attempts++;
         } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
 
@@ -161,15 +171,21 @@ async function spinCommand(msg, type) {
         userData[id].temp[type].push(result);
         if (!isBackToBackDupe) userData[id].spins[type]--;
 
+        // Consume lucky spin if used
+        if (isLucky) {
+            userData[id].luckySpins[type]--;
+        }
+
         saveData();
 
         const embed = new EmbedBuilder()
-            .setTitle(`🎲 ${type.toUpperCase()} SPIN`)
+            .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
             .setAuthor({ name: msg.author.username, iconURL: msg.author.displayAvatarURL() })
             .setColor(RARITY_COLORS[result.rarity] || 0x000000)
-            .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}`)
+            .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (2x Odds for Rare+)*' : ''}`)
             .addFields(
                 { name: '🔋 Spins Remaining', value: `\`${userData[id].spins[type]}\``, inline: true },
+                { name: '🍀 Lucky Spins', value: `\`${userData[id].luckySpins[type]}\``, inline: true },
                 { name: '📝 Recent Results', value: userData[id].temp[type].slice(-5).map(x => `\`${x.item}\``).join(', ') || 'None', inline: false }
             )
             .setTimestamp()
@@ -221,7 +237,6 @@ client.on(Events.InteractionCreate, async interaction => {
             if (action === 'givespec-category') {
                 const selectedCategory = interaction.values[0];
                 let items = [];
-                
                 if (selectedCategory === 'clan') items = CLANS;
                 else if (selectedCategory === 'element1' || selectedCategory === 'element2') items = ELEMENTS;
                 else if (selectedCategory === 'trait') items = TRAITS;
@@ -243,15 +258,43 @@ client.on(Events.InteractionCreate, async interaction => {
             if (action === 'givespec-item') {
                 const selectedItem = interaction.values[0];
                 ensureUser(targetId);
-                
                 userData[targetId].finalized[category] = selectedItem;
                 saveData();
-
                 const targetUser = await client.users.fetch(targetId);
                 await interaction.update({ 
                     content: `✅ Successfully gave **${selectedItem}** (${category}) to **${targetUser.username}**!`, 
                     components: [],
                     embeds: []
+                });
+            }
+
+            if (action === 'givels-category') {
+                const selectedCategory = interaction.values[0];
+                const targetUser = await client.users.fetch(targetId);
+                
+                await interaction.update({ 
+                    content: `How many **${selectedCategory}** Lucky Spins do you want to give to **${targetUser.username}**? (Type a number in the chat)`, 
+                    components: [] 
+                });
+
+                const filter = m => m.author.id === originalUserId && !isNaN(m.content);
+                const collector = interaction.channel.createMessageCollector({ filter, time: 15000, max: 1 });
+
+                collector.on('collect', async m => {
+                    const amount = parseInt(m.content);
+                    ensureUser(targetId);
+
+                    if (selectedCategory === 'all') {
+                        userData[targetId].luckySpins.clan += amount;
+                        userData[targetId].luckySpins.element1 += amount;
+                        userData[targetId].luckySpins.element2 += amount;
+                        userData[targetId].luckySpins.trait += amount;
+                    } else {
+                        userData[targetId].luckySpins[selectedCategory] += amount;
+                    }
+                    
+                    saveData();
+                    await m.reply(`✅ Successfully gave **${amount}** Lucky Spins (${selectedCategory}) to **${targetUser.username}**!`);
                 });
             }
         }
@@ -274,46 +317,67 @@ client.on('messageCreate', async msg => {
         }
 
         if (cmd === 'givespec') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return msg.reply("❌ Only Staff (Administrators) can use this command!");
-            }
-
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Only Staff can use this command!");
             const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Please mention a user or provide a valid ID: `!givespec @User` or `!givespec ID`.");
-
+            if (!target) return msg.reply("❌ Provide a valid @User or ID.");
             const menu = new StringSelectMenuBuilder()
                 .setCustomId(`givespec-category_${target.id}_none_${msg.author.id}`)
-                .setPlaceholder('Choose a category to give...')
+                .setPlaceholder('Choose a category...')
                 .addOptions([
                     { label: 'Clan', value: 'clan', emoji: '⛩️' },
                     { label: 'Element 1', value: 'element1', emoji: '🔥' },
                     { label: 'Element 2', value: 'element2', emoji: '🌊' },
                     { label: 'Trait', value: 'trait', emoji: '✨' }
                 ]);
+            return await msg.reply({ content: `Giving spec to **${target.username}**:`, components: [new ActionRowBuilder().addComponents(menu)] });
+        }
 
-            const row = new ActionRowBuilder().addComponents(menu);
-            return await msg.reply({ content: `Giving a spec to **${target.username}** (${target.id}). First, choose a category:`, components: [row] });
+        if (cmd === 'givels') {
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Only Staff can use this command!");
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Provide a valid @User or ID.");
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId(`givels-category_${target.id}_none_${msg.author.id}`)
+                .setPlaceholder('Choose category for Lucky Spins...')
+                .addOptions([
+                    { label: 'Clan', value: 'clan', emoji: '⛩️' },
+                    { label: 'Element 1', value: 'element1', emoji: '🔥' },
+                    { label: 'Element 2', value: 'element2', emoji: '🌊' },
+                    { label: 'Trait', value: 'trait', emoji: '✨' },
+                    { label: 'All Categories', value: 'all', emoji: '🌟' }
+                ]);
+            return await msg.reply({ content: `Giving Lucky Spins to **${target.username}**:`, components: [new ActionRowBuilder().addComponents(menu)] });
+        }
+
+        if (cmd === 'wipe') {
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Only Staff can use this command!");
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Provide a valid @User or ID.");
+            ensureUser(target.id);
+            userData[target.id].finalized = { clan: null, element1: null, element2: null, trait: null };
+            saveData();
+            return await msg.reply(`✅ Successfully wiped specs for **${target.username}**.`);
         }
 
         if (cmd === 'check') {
             let target = await findUser(msg, args) || msg.author;
             ensureUser(target.id);
             const data = userData[target.id].finalized;
+            const ls = userData[target.id].luckySpins;
             
             const embed = new EmbedBuilder()
                 .setTitle(`📜 ${target.username.toUpperCase()}'S SPECS`)
                 .setThumbnail(target.displayAvatarURL())
                 .setColor(0x2f3136)
                 .addFields(
-                    { name: '⛩️ Clan', value: `\`${data.clan || 'None'}\``, inline: true },
-                    { name: '✨ Trait', value: `\`${data.trait || 'None'}\``, inline: true },
+                    { name: '⛩️ Clan', value: `\`${data.clan || 'None'}\` (🍀 ${ls.clan})`, inline: true },
+                    { name: '✨ Trait', value: `\`${data.trait || 'None'}\` (🍀 ${ls.trait})`, inline: true },
                     { name: '\u200B', value: '\u200B', inline: false },
-                    { name: '🔥 Element 1', value: `\`${data.element1 || 'None'}\``, inline: true },
-                    { name: '🌊 Element 2', value: `\`${data.element2 || 'None'}\``, inline: true }
+                    { name: '🔥 Element 1', value: `\`${data.element1 || 'None'}\` (🍀 ${ls.element1})`, inline: true },
+                    { name: '🌊 Element 2', value: `\`${data.element2 || 'None'}\` (🍀 ${ls.element2})`, inline: true }
                 )
                 .setFooter({ text: "Use !clan, !element1, !element2, or !trait to spin!" })
                 .setTimestamp();
-
             return await msg.reply({ embeds: [embed] });
         }
 
@@ -321,25 +385,19 @@ client.on('messageCreate', async msg => {
             const embed = new EmbedBuilder()
                 .setTitle("🎮 BOT COMMANDS")
                 .setColor(0x7289da)
-                .setDescription("Here are the available commands for the bot:")
                 .addFields(
                     { name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false },
                     { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false },
-                    { name: '🎁 Staff', value: "`!givespec @User`, `!announce [message]`", inline: false }
+                    { name: '🎁 Staff', value: "`!givespec @User`, `!givels @User`, `!wipe @User`, `!announce [msg]`", inline: false }
                 );
             return await msg.reply({ embeds: [embed] });
         }
 
         if (cmd === 'announce') {
             const text = args.join(' ');
-            if (!text) return await msg.reply('❌ Provide a message to announce.');
-            
-            // Delete original command message
-            try { await msg.delete(); } catch (e) { console.error("Could not delete announce command message:", e); }
-            
-            // Send clean embed with NO title or header
-            const embed = new EmbedBuilder().setDescription(text).setColor(0xffc107);
-            return await msg.channel.send({ embeds: [embed] });
+            if (!text) return await msg.reply('❌ Provide a message.');
+            try { await msg.delete(); } catch (e) {}
+            return await msg.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(0xffc107)] });
         }
     } catch (err) {
         console.error("Error in message handler:", err);

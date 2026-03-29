@@ -1,7 +1,5 @@
-// index.js
 require("dotenv").config();
 const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } = require("discord.js");
-const fs = require("fs");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -64,15 +62,13 @@ const TRAITS = [
   { name: "Superhuman Physique", rarity: "Rare", emoji: "💪" },
 ];
 
-// Save finalized specs in memory
+// In-memory user data
 let users = {};
 
-// ---- UTILITIES ----
+// ---- UTILS ----
 function getRandomItem(array) {
   const roll = Math.random() * 100;
-  // Chance table: Mythical 1%, Legendary 5%, Epic 15%, Rare 25%, Common 54%
-  for (let i = 0; i < array.length; i++) {
-    let item = array[i];
+  for (let item of array) {
     let chance;
     switch (item.rarity) {
       case "Mythical": chance = 1; break;
@@ -91,34 +87,31 @@ function getUser(id) {
   return users[id];
 }
 
-// ---- SPIN HANDLER ----
-async function handleSpin(interaction, type) {
-  const user = getUser(interaction.user.id);
+// ---- SPIN ----
+async function handleSpin(message, type) {
+  const user = getUser(message.author.id);
 
-  if (user.spins[type] <= 0) return interaction.reply({ content: `No ${type} spins left!`, ephemeral: true });
+  if (user.spins[type] <= 0) return message.reply(`No ${type} spins left!`);
 
-  let array;
-  if (type === "clan") array = CLANS;
-  else if (type === "element") array = ELEMENTS;
-  else if (type === "trait") array = TRAITS;
-
+  let array = type === "clan" ? CLANS : type === "element" ? ELEMENTS : TRAITS;
   let results = [];
   let spinsToRoll = type === "element" ? 2 : 1;
 
   for (let i = 0; i < spinsToRoll; i++) {
     let item = getRandomItem(array);
-    // Duplicate check
-    let duplicate = results.find(r => r.name === item.name);
-    if (duplicate) {
-      user.spins[type] += 1; // give 1 extra spin for duplicate
-      if (results.filter(r => r.name === item.name).length >= 2) continue; // max 2 duplicates
+    // duplicate check
+    let duplicateCount = results.filter(r => r.name === item.name).length;
+    if (duplicateCount >= 2) {
+      user.spins[type] += 1; // extra spin for duplicate
+      continue;
     }
     results.push(item);
   }
 
   user.spins[type] -= 1;
+
   const embed = new EmbedBuilder()
-    .setTitle(`${interaction.user.username} spun ${type}!`)
+    .setTitle(`${message.author.username} spun ${type}!`)
     .setDescription(results.map(r => `${r.emoji} ${r.name} (${r.rarity})`).join("\n"))
     .setFooter({ text: `Spins left: ${user.spins[type]}` })
     .setColor("Random");
@@ -126,20 +119,19 @@ async function handleSpin(interaction, type) {
   const finalizeButton = new ActionRowBuilder()
     .addComponents(new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel("Finalize").setStyle(ButtonStyle.Primary));
 
-  await interaction.reply({ embeds: [embed], components: [finalizeButton] });
+  await message.reply({ embeds: [embed], components: [finalizeButton] });
 }
 
 // ---- COMMANDS ----
 client.on(Events.MessageCreate, async message => {
-  if (!message.content.startsWith("!")) return;
+  if (!message.content.startsWith("!") || message.author.bot) return;
 
   const args = message.content.slice(1).split(" ");
   const cmd = args.shift().toLowerCase();
-
   const user = getUser(message.author.id);
 
   if (cmd === "cmds") {
-    message.reply(`Commands:\n!spin clan\n!spin element\n!spin trait\n!check\n!announce <message>`);
+    message.reply("Commands:\n!spin clan\n!spin element\n!spin trait\n!check\n!announce <message>");
   }
 
   else if (cmd === "spin") {
@@ -168,14 +160,14 @@ client.on(Events.MessageCreate, async message => {
   }
 });
 
-// ---- BUTTON INTERACTIONS ----
+// ---- BUTTONS ----
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
-
   const user = getUser(interaction.user.id);
   const [action, type] = interaction.customId.split("_");
 
   if (action === "finalize") {
+    // save last spun
     let lastSpun;
     if (type === "clan") lastSpun = getRandomItem(CLANS);
     else if (type === "trait") lastSpun = getRandomItem(TRAITS);

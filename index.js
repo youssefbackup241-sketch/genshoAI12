@@ -91,7 +91,7 @@ function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, n
 function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = { 
-            spins: { clan: 15, element: 6, trait: 3 }, // Updated initial spin counts
+            spins: { clan: 15, element: 6, trait: 3 }, 
             temp: { clan: [], element: [], trait: [] }, 
             finalized: { clan: null, element: [], trait: null } 
         };
@@ -179,19 +179,22 @@ client.on(Events.InteractionCreate, async interaction => {
         ensureUser(id);
 
         if (type === 'element') {
-            // Take the first 2 unique elements from temp, or just the first 2 if not enough unique
+            // FIX: Take up to 2 items from the temp list and save them to finalized
+            const currentTemp = userData[id].temp[type] || [];
+            
+            // We'll take the 2 most recent spins, but you can also make it unique if you prefer.
+            // Let's take the 2 most recent unique elements.
             const uniqueItems = [];
-            for (const x of userData[id].temp[type]) {
-                if (!uniqueItems.includes(x.item)) uniqueItems.push(x.item);
+            for (let i = currentTemp.length - 1; i >= 0; i--) {
+                const item = currentTemp[i].item;
+                if (!uniqueItems.includes(item)) {
+                    uniqueItems.push(item);
+                }
                 if (uniqueItems.length === 2) break;
             }
             
-            // If we don't have 2 unique items, just take what we have
-            if (uniqueItems.length < 2 && userData[id].temp[type].length > 0) {
-                userData[id].finalized[type] = userData[id].temp[type].slice(0, 2).map(x => x.item);
-            } else {
-                userData[id].finalized[type] = uniqueItems;
-            }
+            // Reverse so they are in the order they were spun
+            userData[id].finalized[type] = uniqueItems.reverse();
         } else {
             const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
             userData[id].finalized[type] = lastItem ? lastItem.item : null;
@@ -224,9 +227,14 @@ client.on('messageCreate', async msg => {
             const clan = data.clan || 'None';
             const trait = data.trait || 'None';
             
+            // FIX: Robustly display elements
             let elements = 'None';
             if (Array.isArray(data.element) && data.element.length > 0) {
-                elements = data.element.join(', ');
+                // Filter out any null/undefined just in case
+                const validElements = data.element.filter(e => e != null);
+                if (validElements.length > 0) {
+                    elements = validElements.join(', ');
+                }
             }
 
             const embed = new EmbedBuilder()

@@ -1,5 +1,5 @@
 // index.js
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder, PermissionsBitField, Collection } = require('discord.js');
 const fs = require('fs');
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -24,13 +24,11 @@ const CLANS = [
     // Mythical
     { item: "Ōtsutsuki", rarity: "Mythical", emoji: "👁️" },
     { item: "Kaguya", rarity: "Mythical", emoji: "🪐" },
-    
     // Legendary
     { item: "Uchiha", rarity: "Legendary", emoji: "🔥" },
     { item: "Senju", rarity: "Legendary", emoji: "🌳" },
     { item: "Hyuga", rarity: "Legendary", emoji: "👁️" },
     { item: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
-    
     // Epic
     { item: "Chinoike", rarity: "Epic", emoji: "🩸" },
     { item: "Jugo", rarity: "Epic", emoji: "🌿" },
@@ -38,7 +36,6 @@ const CLANS = [
     { item: "Lee", rarity: "Epic", emoji: "🥋" },
     { item: "Yuki", rarity: "Epic", emoji: "❄️" },
     { item: "Yamanaka", rarity: "Epic", emoji: "🧠" },
-    
     // Rare
     { item: "Aburame", rarity: "Rare", emoji: "🐜" },
     { item: "Yotsuki", rarity: "Rare", emoji: "🟡" },
@@ -48,7 +45,6 @@ const CLANS = [
     { item: "Akimichi", rarity: "Rare", emoji: "🍙" },
     { item: "Sabaku", rarity: "Rare", emoji: "🏜️" },
     { item: "Sarutobi", rarity: "Rare", emoji: "🐒" },
-    
     // Common
     { item: "Nara", rarity: "Common", emoji: "🦌" },
     { item: "Inuzuka", rarity: "Common", emoji: "🐕" },
@@ -93,6 +89,13 @@ const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 8, Epic: 35, Rare: 65, Com
 const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 75, Common: 35 };
 const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
 
+// ----- AUTO-MOD CONFIG -----
+const BANNED_WORDS = ['nigga', 'nigger', 'nigg', 'nig ga', 'faggot', 'fag', 'retard'];
+const ANTI_SPAM_LIMIT = 5; // Messages
+const ANTI_SPAM_TIME = 3000; // Milliseconds
+const MASS_MENTION_LIMIT = 5; // Pings
+const messageLog = new Collection(); // To track spam
+
 // ---------------- UTILS ----------------
 function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
 
@@ -122,14 +125,9 @@ function ensureUser(id) {
 function weightedRandom(arr, weights, isLucky) {
     const pool = [];
     for (let obj of arr) {
-        // If Lucky Spin, remove Common and Rare from the pool
         if (isLucky && (obj.rarity === 'Common' || obj.rarity === 'Rare')) continue;
-
         let weight = weights[obj.rarity] || 1;
-        // Lucky Spin Effect: 5x boost for Epic, Legendary, Mythical
-        if (isLucky && ['Epic', 'Legendary', 'Mythical'].includes(obj.rarity)) {
-            weight *= 5;
-        }
+        if (isLucky && ['Epic', 'Legendary', 'Mythical'].includes(obj.rarity)) weight *= 5;
         const count = Math.max(1, Math.round(weight * 10));
         for (let i = 0; i < count; i++) pool.push(obj);
     }
@@ -142,11 +140,7 @@ async function findUser(msg, args) {
     if (mention) return mention;
     const id = args[0];
     if (id && /^\d{17,20}$/.test(id)) {
-        try {
-            return await client.users.fetch(id);
-        } catch (err) {
-            return null;
-        }
+        try { return await client.users.fetch(id); } catch (err) { return null; }
     }
     return null;
 }
@@ -177,14 +171,12 @@ async function performSpin(source, type, isLucky) {
 
     const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
     const isBackToBackDupe = lastResult && lastResult.item === result.item;
-
     userData[id].temp[type].push(result);
 
     if (!isBackToBackDupe) {
         if (isLucky) userData[id].luckySpins[type]--;
         else userData[id].spins[type]--;
     }
-
     saveData();
 
     const embed = new EmbedBuilder()
@@ -205,18 +197,14 @@ async function performSpin(source, type, isLucky) {
         new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Primary)
     );
 
-    if (source.isButton && source.isButton()) {
-        await source.update({ embeds: [embed], components: [row] });
-    } else {
-        await source.reply({ embeds: [embed], components: [row] });
-    }
+    if (source.isButton && source.isButton()) await source.update({ embeds: [embed], components: [row] });
+    else await source.reply({ embeds: [embed], components: [row] });
 }
 
 async function showSpinChoice(source, type) {
     const user = source.user || source.author;
     const id = user.id;
     ensureUser(id);
-
     const embed = new EmbedBuilder()
         .setTitle(`🎰 ${type.toUpperCase()} SPIN`)
         .setDescription(`Choose which type of spin you want to use for **${type}**:`)
@@ -225,17 +213,12 @@ async function showSpinChoice(source, type) {
             { name: '🔋 Normal', value: `\`${userData[id].spins[type]}\` remaining`, inline: true },
             { name: '🍀 Lucky', value: `\`${userData[id].luckySpins[type]}\` remaining`, inline: true }
         );
-
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`spinchoice_${type}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`spinchoice_${type}lucky_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Secondary)
     );
-
-    if (source.isButton && source.isButton()) {
-        await source.update({ embeds: [embed], components: [row] });
-    } else {
-        await source.reply({ embeds: [embed], components: [row] });
-    }
+    if (source.isButton && source.isButton()) await source.update({ embeds: [embed], components: [row] });
+    else await source.reply({ embeds: [embed], components: [row] });
 }
 
 // ---------------- INTERACTION HANDLER ----------------
@@ -243,45 +226,28 @@ client.on(Events.InteractionCreate, async interaction => {
     try {
         if (interaction.isButton()) {
             const [action, type, originalUserId] = interaction.customId.split('_');
-            
-            if (originalUserId && interaction.user.id !== originalUserId) {
-                return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
-            }
-
+            if (originalUserId && interaction.user.id !== originalUserId) return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
             if (action === 'finalize') {
                 const id = interaction.user.id;
                 ensureUser(id);
                 const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
                 if (!lastItem) return interaction.reply({ content: "❌ Nothing to finalize!", ephemeral: true });
-
                 userData[id].finalized[type] = lastItem.item;
                 userData[id].temp[type] = []; 
                 saveData();
-
-                const embed = new EmbedBuilder()
-                    .setTitle("✅ Finalized!")
-                    .setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`)
-                    .setColor(0x00ff00);
+                const embed = new EmbedBuilder().setTitle("✅ Finalized!").setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`).setColor(0x00ff00);
                 await interaction.update({ embeds: [embed], components: [] });
             }
-
             if (action === 'spinchoice') {
                 const isLucky = type.endsWith('lucky');
                 const realType = type.replace('lucky', '');
                 await performSpin(interaction, realType, isLucky);
             }
-
-            if (action === 'spinagain') {
-                await showSpinChoice(interaction, type);
-            }
+            if (action === 'spinagain') await showSpinChoice(interaction, type);
         }
-
         if (interaction.isStringSelectMenu()) {
             const [action, targetId, category, originalUserId] = interaction.customId.split('_');
-            if (originalUserId && interaction.user.id !== originalUserId) {
-                return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
-            }
-
+            if (originalUserId && interaction.user.id !== originalUserId) return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
             if (action === 'givespec-category') {
                 const selectedCategory = interaction.values[0];
                 let items = selectedCategory === 'clan' ? CLANS : (selectedCategory.startsWith('element') ? ELEMENTS : TRAITS);
@@ -291,7 +257,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     .addOptions(items.slice(0, 25).map(i => ({ label: i.item, description: `Rarity: ${i.rarity}`, value: i.item, emoji: i.emoji })));
                 await interaction.update({ content: `Now select the **${selectedCategory}** to give:`, components: [new ActionRowBuilder().addComponents(menu)] });
             }
-
             if (action === 'givespec-item') {
                 ensureUser(targetId);
                 userData[targetId].finalized[category] = interaction.values[0];
@@ -299,7 +264,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 const targetUser = await client.users.fetch(targetId);
                 await interaction.update({ content: `✅ Gave **${interaction.values[0]}** to **${targetUser.username}**!`, components: [], embeds: [] });
             }
-
             if (action === 'givels-category') {
                 const selectedCategory = interaction.values[0];
                 const targetUser = await client.users.fetch(targetId);
@@ -321,15 +285,44 @@ client.on(Events.InteractionCreate, async interaction => {
 
 // ---------------- COMMAND HANDLER ----------------
 client.on('messageCreate', async msg => {
-    if (!msg.content.startsWith('!') || msg.author.bot) return;
+    if (msg.author.bot) return;
+
+    // --- AUTO-MODERATION (Staff Bypass) ---
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        // 1. Word Filter
+        if (BANNED_WORDS.some(word => msg.content.toLowerCase().includes(word))) {
+            await msg.delete().catch(() => {});
+            return msg.channel.send(`❌ <@${msg.author.id}>, your message was removed for containing banned words.`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
+        }
+        // 2. Invite Protection
+        if (/(discord\.gg\/|discordapp\.com\/invite\/|discord\.com\/invite\/)/i.test(msg.content)) {
+            await msg.delete().catch(() => {});
+            return msg.channel.send(`❌ <@${msg.author.id}>, server invites are not allowed!`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
+        }
+        // 3. Mass Mention Protection
+        if (msg.mentions.users.size > MASS_MENTION_LIMIT) {
+            await msg.delete().catch(() => {});
+            return msg.channel.send(`❌ <@${msg.author.id}>, please don't ping too many users at once.`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
+        }
+        // 4. Anti-Spam
+        const now = Date.now();
+        const userDataLogs = messageLog.get(msg.author.id) || [];
+        userDataLogs.push(now);
+        const recentMessages = userDataLogs.filter(time => now - time < ANTI_SPAM_TIME);
+        messageLog.set(msg.author.id, recentMessages);
+        if (recentMessages.length > ANTI_SPAM_LIMIT) {
+            await msg.delete().catch(() => {});
+            return msg.channel.send(`❌ <@${msg.author.id}>, please stop spamming!`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
+        }
+    }
+
+    if (!msg.content.startsWith('!')) return;
     try {
         const [cmd, ...args] = msg.content.slice(1).split(' ');
         const id = msg.author.id;
         ensureUser(id);
 
-        if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') {
-            return await showSpinChoice(msg, cmd);
-        }
+        if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') return await showSpinChoice(msg, cmd);
 
         if (cmd === 'resetspins') {
             if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
@@ -397,7 +390,7 @@ client.on('messageCreate', async msg => {
             if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
             let amount = args[0] === 'all' ? 100 : parseInt(args[0]);
             if (isNaN(amount) || amount < 1 || amount > 100) return msg.reply("❌ Provide a number between 1 and 100, or 'all' (clears 100).");
-            await msg.delete(); // Delete command
+            await msg.delete();
             const deleted = await msg.channel.bulkDelete(amount, true);
             const reply = await msg.channel.send(`✅ Purged **${deleted.size}** messages.`);
             setTimeout(() => reply.delete().catch(() => {}), 3000);

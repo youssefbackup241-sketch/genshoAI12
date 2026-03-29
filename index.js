@@ -1,5 +1,5 @@
 // index.js
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder } = require('discord.js');
 const fs = require('fs');
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -79,8 +79,8 @@ const TRAITS = [
 const RARITY_COLORS = { Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0x9400d3, Rare: 0x1e90ff, Common: 0x808080 };
 const RARITY_EMOJI = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
 
-// RARITY WEIGHTS (Scaled by 10 in weightedRandom)
-const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 8, Epic: 35, Rare: 65, Common: 35 }; // Increased Rare/Epic
+// RARITY WEIGHTS
+const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 8, Epic: 35, Rare: 65, Common: 35 };
 const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 75, Common: 35 };
 const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
 
@@ -172,32 +172,74 @@ async function spinCommand(msg, type) {
     }
 }
 
-// ---------------- BUTTON HANDLER ----------------
+// ---------------- INTERACTION HANDLER ----------------
 client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isButton()) return;
-
     try {
-        const [action, type] = interaction.customId.split('_');
-        if (action === 'finalize') {
-            const id = interaction.user.id;
-            ensureUser(id);
+        if (interaction.isButton()) {
+            const [action, type] = interaction.customId.split('_');
+            if (action === 'finalize') {
+                const id = interaction.user.id;
+                ensureUser(id);
 
-            const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
-            if (!lastItem) return interaction.reply({ content: "❌ Nothing to finalize!", ephemeral: true });
+                const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
+                if (!lastItem) return interaction.reply({ content: "❌ Nothing to finalize!", ephemeral: true });
 
-            userData[id].finalized[type] = lastItem.item;
-            userData[id].temp[type] = []; 
-            saveData();
+                userData[id].finalized[type] = lastItem.item;
+                userData[id].temp[type] = []; 
+                saveData();
 
-            const embed = new EmbedBuilder()
-                .setTitle("✅ Finalized!")
-                .setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`)
-                .setColor(0x00ff00);
+                const embed = new EmbedBuilder()
+                    .setTitle("✅ Finalized!")
+                    .setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`)
+                    .setColor(0x00ff00);
 
-            await interaction.update({ embeds: [embed], components: [] });
+                await interaction.update({ embeds: [embed], components: [] });
+            }
+        }
+
+        if (interaction.isStringSelectMenu()) {
+            const [action, targetId, category] = interaction.customId.split('_');
+            
+            if (action === 'givespec-category') {
+                const selectedCategory = interaction.values[0];
+                let items = [];
+                let slotLabel = selectedCategory;
+                
+                if (selectedCategory === 'clan') items = CLANS;
+                else if (selectedCategory === 'element1' || selectedCategory === 'element2') items = ELEMENTS;
+                else if (selectedCategory === 'trait') items = TRAITS;
+
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`givespec-item_${targetId}_${selectedCategory}`)
+                    .setPlaceholder(`Choose a ${selectedCategory} to give...`)
+                    .addOptions(items.slice(0, 25).map(i => ({
+                        label: i.item,
+                        description: `Rarity: ${i.rarity}`,
+                        value: i.item,
+                        emoji: i.emoji
+                    })));
+
+                const row = new ActionRowBuilder().addComponents(menu);
+                await interaction.update({ content: `Now select the **${selectedCategory}** you want to give:`, components: [row] });
+            }
+
+            if (action === 'givespec-item') {
+                const selectedItem = interaction.values[0];
+                ensureUser(targetId);
+                
+                userData[targetId].finalized[category] = selectedItem;
+                saveData();
+
+                const targetUser = await client.users.fetch(targetId);
+                await interaction.update({ 
+                    content: `✅ Successfully gave **${selectedItem}** (${category}) to **${targetUser.username}**!`, 
+                    components: [],
+                    embeds: []
+                });
+            }
         }
     } catch (err) {
-        console.error("Error in button interaction:", err);
+        console.error("Error in interaction:", err);
     }
 });
 
@@ -212,6 +254,24 @@ client.on('messageCreate', async msg => {
 
         if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') {
             return await spinCommand(msg, cmd);
+        }
+
+        if (cmd === 'givespec') {
+            const target = msg.mentions.users.first();
+            if (!target) return msg.reply("❌ Please mention a user: `!givespec @User`.");
+
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId(`givespec-category_${target.id}`)
+                .setPlaceholder('Choose a category to give...')
+                .addOptions([
+                    { label: 'Clan', value: 'clan', emoji: '⛩️' },
+                    { label: 'Element 1', value: 'element1', emoji: '🔥' },
+                    { label: 'Element 2', value: 'element2', emoji: '🌊' },
+                    { label: 'Trait', value: 'trait', emoji: '✨' }
+                ]);
+
+            const row = new ActionRowBuilder().addComponents(menu);
+            return await msg.reply({ content: `Giving a spec to **${target.username}**. First, choose a category:`, components: [row] });
         }
 
         if (cmd === 'check') {
@@ -244,7 +304,7 @@ client.on('messageCreate', async msg => {
                 .addFields(
                     { name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false },
                     { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false },
-                    { name: '📢 Staff', value: "`!announce [message]`", inline: false }
+                    { name: '🎁 Staff', value: "`!givespec @User`, `!announce [message]`", inline: false }
                 );
             return await msg.reply({ embeds: [embed] });
         }

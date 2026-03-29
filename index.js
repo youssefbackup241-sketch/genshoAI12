@@ -74,27 +74,31 @@ const TRAITS = [
     { item: "Superhuman Physique", rarity: "Rare", emoji: "💪" }
 ];
 
-const RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
+// Rarity weights for Clan spins (higher Rare/Epic)
+const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 25, Rare: 50, Common: 40 };
+
+// Rarity weights for Element spins (very low Mythical)
+const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 70, Common: 40 };
+
+// Default weights for Traits
+const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
+
 const rarityEmoji = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
 
 // ---------------- UTILS ----------------
 function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
 
-/**
- * Ensures user data exists and follows the expected structure.
- * This function also "heals" old data if it's missing fields or has the wrong types.
- */
 function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = { 
-            spins: { clan: 10, element: 10, trait: 5 }, 
+            spins: { clan: 15, element: 6, trait: 3 }, // Updated initial spin counts
             temp: { clan: [], element: [], trait: [] }, 
             finalized: { clan: null, element: [], trait: null } 
         };
     }
 
     // --- HEAL OLD/MALFORMED DATA ---
-    if (!userData[id].spins) userData[id].spins = { clan: 10, element: 10, trait: 5 };
+    if (!userData[id].spins) userData[id].spins = { clan: 15, element: 6, trait: 3 };
     if (!userData[id].temp) userData[id].temp = { clan: [], element: [], trait: [] };
     if (!userData[id].finalized) userData[id].finalized = { clan: null, element: [], trait: null };
 
@@ -104,11 +108,12 @@ function ensureUser(id) {
     }
 }
 
-function weightedRandom(arr) {
+function weightedRandom(arr, weights) {
     const pool = [];
     for (let obj of arr) {
-        const weight = RARITY_WEIGHTS[obj.rarity] || 1;
-        for (let i = 0; i < weight; i++) pool.push(obj);
+        const weight = weights[obj.rarity] || 1;
+        // Since we have fractional weights (0.1), we scale everything up by 10
+        for (let i = 0; i < Math.max(1, Math.round(weight * 10)); i++) pool.push(obj);
     }
     return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -120,27 +125,30 @@ async function spinCommand(msg, type) {
     
     if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
 
+    // Determine weights based on spin type
+    let weights;
+    if (type === 'clan') weights = CLAN_RARITY_WEIGHTS;
+    else if (type === 'element') weights = ELEMENT_RARITY_WEIGHTS;
+    else weights = DEFAULT_RARITY_WEIGHTS;
+
     // Guard against duplicate result spam (keeps things fair)
     const maxDupesInTemp = type === 'element' ? 2 : 1;
     let result;
     let attempts = 0;
     do {
-        result = weightedRandom(type === 'clan' ? CLANS : type === 'element' ? ELEMENTS : TRAITS);
+        result = weightedRandom(type === 'clan' ? CLANS : type === 'element' ? ELEMENTS : TRAITS, weights);
         attempts++;
     } while (userData[id].temp[type].filter(x => x.item === result.item).length >= maxDupesInTemp && attempts < 10);
 
-    // FIX: Back-to-back refund logic
-    // We check the LAST item in temp. If it matches the current result, it's a refund.
+    // Back-to-back refund logic
     const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
     const isBackToBackDupe = lastResult && lastResult.item === result.item;
 
     userData[id].temp[type].push(result);
 
     if (!isBackToBackDupe) {
-        // Not a back-to-back duplicate, consume a spin.
         userData[id].spins[type]--;
     }
-    // If it WAS a back-to-back duplicate, the spin count doesn't change (refund).
 
     saveData();
 
@@ -170,12 +178,21 @@ client.on(Events.InteractionCreate, async interaction => {
         const id = interaction.user.id;
         ensureUser(id);
 
-        // Finalize logic
         if (type === 'element') {
-            // For elements, we keep up to 2 items
-            userData[id].finalized[type] = userData[id].temp[type].slice(0, 2).map(x => x.item);
+            // Take the first 2 unique elements from temp, or just the first 2 if not enough unique
+            const uniqueItems = [];
+            for (const x of userData[id].temp[type]) {
+                if (!uniqueItems.includes(x.item)) uniqueItems.push(x.item);
+                if (uniqueItems.length === 2) break;
+            }
+            
+            // If we don't have 2 unique items, just take what we have
+            if (uniqueItems.length < 2 && userData[id].temp[type].length > 0) {
+                userData[id].finalized[type] = userData[id].temp[type].slice(0, 2).map(x => x.item);
+            } else {
+                userData[id].finalized[type] = uniqueItems;
+            }
         } else {
-            // For others, we take the most recent (last) item
             const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
             userData[id].finalized[type] = lastItem ? lastItem.item : null;
         }
@@ -204,11 +221,9 @@ client.on('messageCreate', async msg => {
             
             const data = userData[target.id].finalized;
             
-            // Extra safe extraction for the embed
             const clan = data.clan || 'None';
             const trait = data.trait || 'None';
             
-            // Check if element exists and is an array, then join it.
             let elements = 'None';
             if (Array.isArray(data.element) && data.element.length > 0) {
                 elements = data.element.join(', ');
@@ -226,7 +241,7 @@ client.on('messageCreate', async msg => {
             return msg.reply({ embeds: [embed] });
         } catch (err) {
             console.error("Error in !check command:", err);
-            return msg.reply("❌ An error occurred while checking specs. Data might be corrupted.");
+            return msg.reply("❌ An error occurred while checking specs.");
         }
     }
 

@@ -1,142 +1,197 @@
 // index.js
-import 'dotenv/config';
-import { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } from 'discord.js';
-import fs from 'fs';
+require('dotenv').config();
+const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Events } = require('discord.js');
+const fs = require('fs');
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    partials: [Partials.Channel]
 });
 
-// DATA: CLANS, ELEMENTS, TRAITS
-const CLANS = {
-    Mythical: ["Ōtsutsuki 🛸", "Kaguya 👑"],
-    Legendary: ["Uchiha 🔥", "Senju 🌳", "Hyuga 👁️", "Uzumaki 🌀"],
-    Epic: ["Yuki ❄️", "Hozuki 💧", "Hoshigaki 🌊", "Chinoike 🩸", "Jugo 🌿", "Kurama 🦊", "Sabaku 🏜️"],
-    Rare: ["Shirogane ⚪", "Yotsuki 🟡", "Fūma 🐍", "Iburi 🐉", "Hatake ⚔️", "Kamizuru 🐦", "Sarutobi 🐒"],
-    Common: ["Aburame 🐛", "Akimichi 🍙", "Nara 🦉", "Yamanaka 🌸", "Inuzuka 🐕", "Shimura 🦊", "Lee 🥋"]
-};
-
-const ELEMENTS = {
-    Mythical: ["Yin ☯️", "Yang ☯️", "Chaos 🌌", "Order 🛡️"],
-    Legendary: ["Wood 🌳"],
-    Rare: ["Fire 🔥", "Water 💧", "Earth 🌍", "Wind 🌬️", "Lightning ⚡"],
-};
-
-const TRAITS = {
-    Mythical: ["Clan Specialist 🧬"],
-    Legendary: ["Analytical Eye 👁️", "Jutsu Amplification 🔥", "Kekkei Genkai Proficiency 💎"],
-    Epic: ["Elemental Affinity Mastery 🌟", "Illusion/Genjutsu Potency 🌫️", "Iryojutsu Proficiency 💉"],
-    Rare: ["Fuinjutsu Technique Expertise 🔒", "Scientist 🔬", "Superhuman Physique 💪"],
-};
-
-// USER DATABASE
+// Database simulation
 let db = {};
 const DB_FILE = './db.json';
-if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-
-function saveDB() {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+function loadDB() {
+    if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE));
 }
+function saveDB() { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
+loadDB();
 
-// Weighted spin
-function pickWeighted(pool, previous = []) {
+// Configs
+const clans = [
+    { name: 'Ōtsutsuki', rarity: 'Mythical', emoji: '👑' },
+    { name: 'Kaguya', rarity: 'Mythical', emoji: '🪐' },
+    { name: 'Uchiha', rarity: 'Legendary', emoji: '🔥' },
+    { name: 'Senju', rarity: 'Legendary', emoji: '🌳' },
+    { name: 'Hyuga', rarity: 'Legendary', emoji: '👁️' },
+    { name: 'Uzumaki', rarity: 'Legendary', emoji: '🌀' },
+    { name: 'Yuki', rarity: 'Epic', emoji: '❄️' },
+    { name: 'Hozuki', rarity: 'Epic', emoji: '💧' },
+    { name: 'Hoshigaki', rarity: 'Epic', emoji: '🌊' },
+    { name: 'Chinoike', rarity: 'Epic', emoji: '🩸' },
+    { name: 'Jugo', rarity: 'Epic', emoji: '🟣' },
+    { name: 'Kurama', rarity: 'Epic', emoji: '🦊' },
+    { name: 'Sabaku', rarity: 'Epic', emoji: '🏜️' },
+    { name: 'Shirogane', rarity: 'Rare', emoji: '⚪' },
+    { name: 'Yotsuki', rarity: 'Rare', emoji: '🟡' },
+    { name: 'Fūma', rarity: 'Rare', emoji: '⚫' },
+    { name: 'Iburi', rarity: 'Rare', emoji: '🌫️' },
+    { name: 'Hatake', rarity: 'Rare', emoji: '🎩' },
+    { name: 'Kamizuru', rarity: 'Rare', emoji: '🦅' },
+    { name: 'Sarutobi', rarity: 'Rare', emoji: '🐒' },
+    { name: 'Aburame', rarity: 'Common', emoji: '🐜' },
+    { name: 'Akimichi', rarity: 'Common', emoji: '🥐' },
+    { name: 'Nara', rarity: 'Common', emoji: '🌳' },
+    { name: 'Yamanaka', rarity: 'Common', emoji: '🧠' },
+    { name: 'Inuzuka', rarity: 'Common', emoji: '🐕' },
+    { name: 'Shimura', rarity: 'Common', emoji: '🪖' },
+    { name: 'Lee', rarity: 'Common', emoji: '🥋' }
+];
+
+const traits = [
+    { name: 'Analytical Eye', rarity: 'Legendary', emoji: '👁️' },
+    { name: 'Clan Specialist', rarity: 'Mythical', emoji: '👑' },
+    { name: 'Jutsu Amplification', rarity: 'Legendary', emoji: '⚡' },
+    { name: 'Elemental Affinity Mastery', rarity: 'Epic', emoji: '🌟' },
+    { name: 'Illusion/Genjutsu Potency', rarity: 'Epic', emoji: '🌀' },
+    { name: 'Kekkei Genkai Proficiency', rarity: 'Legendary', emoji: '🧬' },
+    { name: 'Fuinjutsu Technique Expertise', rarity: 'Rare', emoji: '📜' },
+    { name: 'Iryojutsu Proficiency', rarity: 'Epic', emoji: '💉' },
+    { name: 'Scientist', rarity: 'Rare', emoji: '🧪' },
+    { name: 'Superhuman Physique', rarity: 'Rare', emoji: '💪' }
+];
+
+const elements = [
+    { name: 'Wood', rarity: 'Legendary', emoji: '🌳' },
+    { name: 'Fire', rarity: 'Rare', emoji: '🔥' },
+    { name: 'Water', rarity: 'Rare', emoji: '💧' },
+    { name: 'Earth', rarity: 'Rare', emoji: '🌎' },
+    { name: 'Wind', rarity: 'Rare', emoji: '💨' },
+    { name: 'Lightning', rarity: 'Rare', emoji: '⚡' },
+    { name: 'Yin', rarity: 'Mythical', emoji: '🌑' },
+    { name: 'Yang', rarity: 'Mythical', emoji: '🌕' },
+    { name: 'Chaos', rarity: 'Mythical', emoji: '🌀' },
+    { name: 'Order', rarity: 'Mythical', emoji: '📜' }
+];
+
+// Rarity chances
+const rarityChances = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
+
+function spinItem(list) {
     const roll = Math.random() * 100;
-    let rarity;
-    if (roll < 2) rarity = "Mythical";
-    else if (roll < 10) rarity = "Legendary";
-    else if (roll < 25) rarity = "Epic";
-    else if (roll < 50) rarity = "Rare";
-    else rarity = "Common";
-
-    const items = pool[rarity] || [];
-    const filtered = items.filter(i => !previous.includes(i));
-    if (filtered.length === 0) return pickWeighted(pool, previous);
-
-    const picked = filtered[Math.floor(Math.random() * filtered.length)];
-    return { name: picked, rarity };
+    let cumulative = 0;
+    const pool = [];
+    for (let item of list) {
+        cumulative += rarityChances[item.rarity] || 0;
+        if (roll <= cumulative) pool.push(item);
+    }
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : list[Math.floor(Math.random() * list.length)];
 }
 
-// Command Handler
-client.on(Events.MessageCreate, async msg => {
-    if (!msg.content.startsWith('!') || msg.author.bot) return;
+// Command handler
+client.on(Events.MessageCreate, async message => {
+    if (message.author.bot) return;
+    const args = message.content.split(/ +/);
+    const cmd = args.shift().toLowerCase();
 
-    const args = msg.content.slice(1).split(/ +/);
-    const command = args.shift().toLowerCase();
+    const userId = message.author.id;
+    if (!db[userId]) db[userId] = { spins: { clan: 10, element: 10, trait: 5 }, finalized: { clan: null, element: [], trait: null } };
 
-    // INIT USER DATA
-    if (!db[msg.author.id]) db[msg.author.id] = { spins: { clan: [], element: [], trait: [] }, finalized: { clan: null, element: [], trait: null } };
-
-    if (command === 'clan' || command === 'element' || command === 'trait') {
-        const type = command;
-        let spinsLeft = type === 'element' ? 10 : 10; // 10 for element and clan, 5 for trait
-        if (type === 'trait') spinsLeft = 5;
-
-        const previous = db[msg.author.id].spins[type].map(s => s.name);
-        const picked = pickWeighted(type === 'clan' ? CLANS : type === 'element' ? ELEMENTS : TRAITS, previous);
-
-        // DUPLICATE CHECK
-        if (previous.includes(picked.name)) {
-            msg.channel.send(`🔁 You spun a duplicate **${picked.name}**, extra spin granted!`);
-            spinsLeft++;
-        } else {
-            db[msg.author.id].spins[type].push(picked);
-            saveDB();
-        }
-
-        // Embed for spin
+    if (cmd === '!clan') {
+        if (db[userId].spins.clan <= 0) return message.reply('❌ You have no clan spins left!');
+        const item = spinItem(clans);
+        db[userId].spins.clan--;
+        saveDB();
         const embed = new EmbedBuilder()
-            .setTitle(`🎰 ${type.charAt(0).toUpperCase() + type.slice(1)} Spin!`)
-            .setDescription(`You got **${picked.name}** (${picked.rarity})\nRemaining spins: ${spinsLeft}`)
-            .setColor(0x00AE86);
-
-        const row = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`finalize_${type}`)
-                    .setLabel('Finalize')
-                    .setStyle(ButtonStyle.Success)
-            );
-
-        await msg.channel.send({ embeds: [embed], components: [row] });
+            .setTitle('🎲 Clan Spin')
+            .setDescription(`You spun: ${item.emoji} **${item.name}** (${item.rarity})\nSpins left: ${db[userId].spins.clan}`)
+            .setColor('Blue');
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('finalize_clan').setLabel('Finalize').setStyle(ButtonStyle.Primary)
+        );
+        await message.reply({ embeds: [embed], components: [row] });
     }
 
-    if (command === 'check') {
-        const userId = args[0] ? args[0].replace(/[<@!>]/g, '') : msg.author.id;
-        const user = db[userId];
-        if (!user) return msg.channel.send('User not found!');
-
+    if (cmd === '!element') {
+        if (db[userId].spins.element <= 0) return message.reply('❌ You have no element spins left!');
+        const item = spinItem(elements);
+        db[userId].spins.element--;
+        saveDB();
         const embed = new EmbedBuilder()
-            .setTitle(`${msg.guild.members.cache.get(userId)?.user.username || 'User'} Specs`)
-            .addFields(
-                { name: 'Clan', value: user.finalized.clan || 'None', inline: true },
-                { name: 'Elements', value: user.finalized.element.length ? user.finalized.element.join(', ') : 'None', inline: true },
-                { name: 'Trait', value: user.finalized.trait || 'None', inline: true }
-            )
-            .setColor(0xFFD700);
+            .setTitle('🎲 Element Spin')
+            .setDescription(`You spun: ${item.emoji} **${item.name}** (${item.rarity})\nSpins left: ${db[userId].spins.element}`)
+            .setColor('Green');
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('finalize_element').setLabel('Finalize').setStyle(ButtonStyle.Primary)
+        );
+        await message.reply({ embeds: [embed], components: [row] });
+    }
 
-        msg.channel.send({ embeds: [embed] });
+    if (cmd === '!trait') {
+        if (db[userId].spins.trait <= 0) return message.reply('❌ You have no trait spins left!');
+        const item = spinItem(traits);
+        db[userId].spins.trait--;
+        saveDB();
+        const embed = new EmbedBuilder()
+            .setTitle('🎲 Trait Spin')
+            .setDescription(`You spun: ${item.emoji} **${item.name}** (${item.rarity})\nSpins left: ${db[userId].spins.trait}`)
+            .setColor('Purple');
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('finalize_trait').setLabel('Finalize').setStyle(ButtonStyle.Primary)
+        );
+        await message.reply({ embeds: [embed], components: [row] });
+    }
+
+    if (cmd === '!check') {
+        const user = message.mentions.users.first() || message.author;
+        if (!db[user.id]) return message.reply('❌ User has no finalized specs yet!');
+        const f = db[user.id].finalized;
+        const embed = new EmbedBuilder()
+            .setTitle(`📋 ${user.username}'s Specs`)
+            .setDescription(`**Clan:** ${f.clan || 'None'}\n**Elements:** ${f.element.length ? f.element.join(', ') : 'None'}\n**Trait:** ${f.trait || 'None'}`)
+            .setColor('Gold');
+        message.reply({ embeds: [embed] });
+    }
+
+    if (cmd === '!cmds') {
+        const embed = new EmbedBuilder()
+            .setTitle('🛠️ Command List')
+            .setDescription('!clan\n!element\n!trait\n!check @user\n!cmds')
+            .setColor('DarkBlue');
+        message.reply({ embeds: [embed] });
+    }
+
+    if (cmd === '!announce') {
+        const content = args.join(' ');
+        if (!content) return message.reply('❌ Provide a message to announce.');
+        const embed = new EmbedBuilder().setDescription(content).setColor('Orange');
+        message.channel.send({ embeds: [embed] });
     }
 });
 
-// Button interaction for finalizing
+// Button handling for finalize
 client.on(Events.InteractionCreate, async inter => {
     if (!inter.isButton()) return;
-    const [action, type] = inter.customId.split('_');
-    const user = db[inter.user.id];
-    if (!user) return;
+    const userId = inter.user.id;
+    if (!db[userId]) db[userId] = { spins: { clan: 10, element: 10, trait: 5 }, finalized: { clan: null, element: [], trait: null } };
 
-    if (action === 'finalize') {
+    if (inter.customId.startsWith('finalize_')) {
+        const type = inter.customId.split('_')[1];
+        const user = db[userId];
+        if (!user.spins[type] && type !== 'element') return inter.reply({ content: `❌ You have no spins to finalize!`, ephemeral: true });
         if (type === 'element') {
-            if (!user.finalized.element.includes(user.spins.element[0]?.name)) {
-                user.finalized.element.push(user.spins.element[0]?.name);
+            const lastSpin = elements[Math.floor(Math.random() * elements.length)];
+            if (!user.finalized.element.includes(lastSpin.name)) {
+                user.finalized.element.push(lastSpin.name);
                 if (user.finalized.element.length > 2) user.finalized.element.shift();
             }
         } else {
-            user.finalized[type] = user.spins[type][0]?.name;
+            const lastSpin = type === 'clan' ? clans[Math.floor(Math.random() * clans.length)] : traits[Math.floor(Math.random() * traits.length)];
+            user.finalized[type] = lastSpin.name;
         }
         saveDB();
-        inter.update({ content: `✅ You finalized your ${type}!`, components: [], embeds: [] });
+        inter.update({ content: `✅ Your ${type} has been finalized!`, components: [], embeds: [] });
     }
 });
 
-client.login(process.env.BOT_TOKEN);
+client.login(process.env.DISCORD_TOKEN);

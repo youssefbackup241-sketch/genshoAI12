@@ -2,8 +2,13 @@
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder, PermissionsBitField, Collection } = require('discord.js');
 const fs = require('fs');
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-    partials: [Partials.Channel]
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers // Added for GuildMemberAdd event
+    ],
+    partials: [Partials.Channel, Partials.GuildMember, Partials.User]
 });
 require('dotenv').config();
 
@@ -281,6 +286,22 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
     } catch (err) { console.error("Error in interaction:", err); }
+});
+
+// ---------------- WELCOME DM ----------------
+client.on(Events.GuildMemberAdd, async member => {
+    try {
+        const welcomeEmbed = new EmbedBuilder()
+            .setTitle("Welcome to **GENSHŌ — 幻象**")
+            .setColor(0x2f3136)
+            .setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n\nEvery choice you make matters here. Alliances, rivalries, and battles will shape your story.\n\nWill you rise as a legend… or fall into obscurity?\n\nYour journey starts now.`)
+            .setThumbnail(member.guild.iconURL())
+            .setTimestamp();
+
+        await member.send({ embeds: [welcomeEmbed] }).catch(() => {
+            console.log(`Could not send welcome DM to ${member.user.tag}. They may have DMs disabled.`);
+        });
+    } catch (err) { console.error("Error in welcome DM:", err); }
 });
 
 // ---------------- COMMAND HANDLER ----------------

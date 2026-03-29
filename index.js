@@ -1,9 +1,15 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
-});
+// Emojis for rarities
+const rarityEmojis = {
+    Mythical: '💎',
+    Legendary: '🌟',
+    Epic: '🔥',
+    Rare: '✨',
+    Common: '⚪'
+};
 
 // Data
 const clans = {
@@ -15,7 +21,7 @@ const clans = {
 };
 
 const elements = {
-    Mythical: ['Yin', 'Yang', 'Chaos', 'Order'],
+    Mythical: ['Yin','Yang','Chaos','Order'],
     Legendary: ['Wood'],
     Rare: ['Fire','Water','Earth','Wind','Lightning']
 };
@@ -26,11 +32,27 @@ const traits = {
     Rare: ['Fuinjutsu Technique Expertise','Scientist','Superhuman Physique']
 };
 
-// User storage
-const users = {}; // { userId: { clanSpins: [], elementSpins: [], traitSpins: [], finalized: {} } }
+// Users database
+const users = {};
 
-// Helper
+// Helpers
 function randomChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function getRarity(item, type) {
+    for (const [rarity, list] of Object.entries(type)) {
+        if(list.includes(item)) return rarity;
+    }
+    return 'Common';
+}
+
+// Send spin embed
+function sendSpinEmbed(message, type, item) {
+    const rarity = getRarity(item, type);
+    const embed = new EmbedBuilder()
+        .setTitle(`🎲 ${type.slice(0,-1).toUpperCase()} SPIN!`)
+        .setDescription(`${rarityEmojis[rarity]} **${item}**\nRarity: **${rarity}**`)
+        .setColor('Random');
+    message.reply({ embeds: [embed] });
+}
 
 // Commands
 client.on('messageCreate', async (message) => {
@@ -38,36 +60,40 @@ client.on('messageCreate', async (message) => {
     const args = message.content.trim().split(/ +/);
     const cmd = args.shift().toLowerCase();
 
-    // Init user
     if(!users[message.author.id]) users[message.author.id] = {
         clanSpins: 10,
         elementSpins: 10,
         traitSpins: 5,
+        current: { clans: [], elements: [], traits: [] },
         finalized: { clans: [], elements: [], traits: [] }
     };
+    const user = users[message.author.id];
 
-    // ELEMENT SPIN
-    if(cmd === '!element') {
-        if(users[message.author.id].elementSpins <= 0) return message.reply('No element spins left!');
-        const chosen = randomChoice(Object.values(elements).flat());
-        users[message.author.id].elementSpins--;
-        message.reply(`You spun: **${chosen}**. Use !finalize element ${chosen} to keep it.`);
-    }
-
-    // CLAN SPIN
+    // CLAN
     if(cmd === '!clan') {
-        if(users[message.author.id].clanSpins <= 0) return message.reply('No clan spins left!');
-        const chosen = randomChoice(Object.values(clans).flat());
-        users[message.author.id].clanSpins--;
-        message.reply(`You spun: **${chosen}**. Use !finalize clan ${chosen} to keep it.`);
+        if(user.clanSpins <= 0) return message.reply('No clan spins left!');
+        const choice = randomChoice(Object.values(clans).flat());
+        user.clanSpins--;
+        user.current.clans.push(choice);
+        sendSpinEmbed(message, clans, choice);
     }
 
-    // TRAIT SPIN
+    // ELEMENT
+    if(cmd === '!element') {
+        if(user.elementSpins <= 0) return message.reply('No element spins left!');
+        const choice = randomChoice(Object.values(elements).flat());
+        user.elementSpins--;
+        user.current.elements.push(choice);
+        sendSpinEmbed(message, elements, choice);
+    }
+
+    // TRAIT
     if(cmd === '!trait') {
-        if(users[message.author.id].traitSpins <= 0) return message.reply('No trait spins left!');
-        const chosen = randomChoice(Object.values(traits).flat());
-        users[message.author.id].traitSpins--;
-        message.reply(`You spun: **${chosen}**. Use !finalize trait ${chosen} to keep it.`);
+        if(user.traitSpins <= 0) return message.reply('No trait spins left!');
+        const choice = randomChoice(Object.values(traits).flat());
+        user.traitSpins--;
+        user.current.traits.push(choice);
+        sendSpinEmbed(message, traits, choice);
     }
 
     // FINALIZE
@@ -75,42 +101,50 @@ client.on('messageCreate', async (message) => {
         const type = args.shift();
         const choice = args.join(' ');
         if(!['clan','element','trait'].includes(type)) return message.reply('Invalid type!');
-        if(users[message.author.id].finalized[type + 's'].includes(choice)) return message.reply('Already finalized this!');
-        users[message.author.id].finalized[type + 's'].push(choice);
-        message.reply(`You finalized: **${choice}** for ${type}.`);
+        if(!user.current[type+'s'].includes(choice)) return message.reply('You didn’t spin this item!');
+        if(user.finalized[type+'s'].includes(choice)) return message.reply('Already finalized!');
+        user.finalized[type+'s'].push(choice);
+        const embed = new EmbedBuilder()
+            .setTitle(`✅ Finalized ${type}`)
+            .setDescription(`You chose **${choice}**`)
+            .setColor('Green');
+        message.reply({ embeds: [embed] });
     }
 
-    // STAFF: WIPE
-    if(cmd === '!wipe' && message.member.permissions.has('Administrator')) {
-        const userId = args[0].replace(/[<@!>]/g,'');
-        if(!users[userId]) return message.reply('User not found!');
-        users[userId] = { clanSpins:10, elementSpins:10, traitSpins:5, finalized:{ clans: [], elements: [], traits: [] } };
-        message.reply('User spins reset!');
+    // STAFF
+    const isStaff = message.member.permissions.has('Administrator');
+
+    // WIPE
+    if(cmd === '!wipe' && isStaff) {
+        const targetId = args[0].replace(/[<@!>]/g,'');
+        users[targetId] = { clanSpins:10, elementSpins:10, traitSpins:5, current:{ clans: [], elements: [], traits: [] }, finalized:{ clans: [], elements: [], traits: [] }};
+        message.reply(`Wiped spins for <@${targetId}>`);
     }
 
-    // STAFF: ADD SPINS
-    if(cmd === '!addspin' && message.member.permissions.has('Administrator')) {
-        const userId = args[0].replace(/[<@!>]/g,'');
+    // ADDSPIN
+    if(cmd === '!addspin' && isStaff) {
+        const targetId = args[0].replace(/[<@!>]/g,'');
         const type = args[1];
         const amount = parseInt(args[2]);
-        if(!users[userId]) users[userId] = { clanSpins:0, elementSpins:0, traitSpins:0, finalized:{ clans: [], elements: [], traits: [] } };
-        users[userId][type+'Spins'] += amount;
-        message.reply(`Added ${amount} ${type} spins to <@${userId}>`);
+        if(!users[targetId]) users[targetId] = { clanSpins:0, elementSpins:0, traitSpins:0, current:{ clans: [], elements: [], traits: [] }, finalized:{ clans: [], elements: [], traits: [] }};
+        users[targetId][type+'Spins'] += amount;
+        message.reply(`Added ${amount} ${type} spins to <@${targetId}>`);
     }
 
-    // STAFF: SET SPECS
-    if(cmd === '!setspecs' && message.member.permissions.has('Administrator')) {
-        const userId = args[0].replace(/[<@!>]/g,'');
-        const type = args[1];
+    // SETSPECS
+    if(cmd === '!setspecs' && isStaff) {
+        const targetId = args[0].replace(/[<@!>]/g,'');
+        const type = args[1]; // clan/element/trait
         const value = args.slice(2).join(' ');
-        if(!users[userId]) users[userId] = { clanSpins:0, elementSpins:0, traitSpins:0, finalized:{ clans: [], elements: [], traits: [] } };
-        users[userId].finalized[type+'s'] = [value];
-        message.reply(`Set ${type} for <@${userId}> to ${value}`);
+        if(!users[targetId]) users[targetId] = { clanSpins:0, elementSpins:0, traitSpins:0, current:{ clans: [], elements: [], traits: [] }, finalized:{ clans: [], elements: [], traits: [] }};
+        if(!['clan','element','trait'].includes(type)) return message.reply('Invalid type!');
+        users[targetId].finalized[type+'s'] = [value];
+        message.reply(`Set ${type} for <@${targetId}> to ${value}`);
     }
 
-    // STAFF: CMD LIST
-    if(cmd === '!cmds' && message.member.permissions.has('Administrator')) {
-        message.reply('**Commands:** !element !clan !trait !finalize !wipe !addspin !setspecs !cmds');
+    // CMD LIST
+    if(cmd === '!cmds' && isStaff) {
+        message.reply('**Commands:** !clan !element !trait !finalize !wipe !addspin !setspecs !cmds');
     }
 });
 

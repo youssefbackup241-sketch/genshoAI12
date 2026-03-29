@@ -74,13 +74,8 @@ const TRAITS = [
     { item: "Superhuman Physique", rarity: "Rare", emoji: "💪" }
 ];
 
-// Rarity weights for Clan spins (higher Rare/Epic)
 const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 25, Rare: 50, Common: 40 };
-
-// Rarity weights for Element spins (very low Mythical)
 const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 70, Common: 40 };
-
-// Default weights for Traits
 const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
 
 const rarityEmoji = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
@@ -91,28 +86,40 @@ function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, n
 function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = { 
-            spins: { clan: 15, element: 6, trait: 3 }, 
-            temp: { clan: [], element: [], trait: [] }, 
-            finalized: { clan: null, element: [], trait: null } 
+            spins: { clan: 15, element1: 6, element2: 6, trait: 3 }, 
+            temp: { clan: [], element1: [], element2: [], trait: [] }, 
+            finalized: { clan: null, element1: null, element2: null, trait: null } 
         };
     }
 
     // --- HEAL OLD/MALFORMED DATA ---
-    if (!userData[id].spins) userData[id].spins = { clan: 15, element: 6, trait: 3 };
-    if (!userData[id].temp) userData[id].temp = { clan: [], element: [], trait: [] };
-    if (!userData[id].finalized) userData[id].finalized = { clan: null, element: [], trait: null };
+    if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 6, element2: 6, trait: 3 };
+    if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [] };
+    if (!userData[id].finalized) userData[id].finalized = { clan: null, element1: null, element2: null, trait: null };
 
-    // Ensure finalized.element is ALWAYS an array (prevents crash in !check)
-    if (!Array.isArray(userData[id].finalized.element)) {
-        userData[id].finalized.element = [];
+    // Migrate old element array to separate slots if necessary
+    if (Array.isArray(userData[id].finalized.element)) {
+        userData[id].finalized.element1 = userData[id].finalized.element[0] || null;
+        userData[id].finalized.element2 = userData[id].finalized.element[1] || null;
+        delete userData[id].finalized.element;
     }
+    
+    // Ensure separate element slots exist
+    if (userData[id].spins.element !== undefined) {
+        userData[id].spins.element1 = userData[id].spins.element;
+        userData[id].spins.element2 = userData[id].spins.element;
+        delete userData[id].spins.element;
+    }
+    if (!userData[id].spins.element1) userData[id].spins.element1 = 6;
+    if (!userData[id].spins.element2) userData[id].spins.element2 = 6;
+    if (!userData[id].temp.element1) userData[id].temp.element1 = [];
+    if (!userData[id].temp.element2) userData[id].temp.element2 = [];
 }
 
 function weightedRandom(arr, weights) {
     const pool = [];
     for (let obj of arr) {
         const weight = weights[obj.rarity] || 1;
-        // Since we have fractional weights (0.1), we scale everything up by 10
         for (let i = 0; i < Math.max(1, Math.round(weight * 10)); i++) pool.push(obj);
     }
     return pool[Math.floor(Math.random() * pool.length)];
@@ -125,30 +132,23 @@ async function spinCommand(msg, type) {
     
     if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
 
-    // Determine weights based on spin type
     let weights;
     if (type === 'clan') weights = CLAN_RARITY_WEIGHTS;
-    else if (type === 'element') weights = ELEMENT_RARITY_WEIGHTS;
+    else if (type.startsWith('element')) weights = ELEMENT_RARITY_WEIGHTS;
     else weights = DEFAULT_RARITY_WEIGHTS;
 
-    // Guard against duplicate result spam (keeps things fair)
-    const maxDupesInTemp = type === 'element' ? 2 : 1;
     let result;
     let attempts = 0;
     do {
-        result = weightedRandom(type === 'clan' ? CLANS : type === 'element' ? ELEMENTS : TRAITS, weights);
+        result = weightedRandom(type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS, weights);
         attempts++;
-    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= maxDupesInTemp && attempts < 10);
+    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
 
-    // Back-to-back refund logic
     const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
     const isBackToBackDupe = lastResult && lastResult.item === result.item;
 
     userData[id].temp[type].push(result);
-
-    if (!isBackToBackDupe) {
-        userData[id].spins[type]--;
-    }
+    if (!isBackToBackDupe) userData[id].spins[type]--;
 
     saveData();
 
@@ -178,29 +178,10 @@ client.on(Events.InteractionCreate, async interaction => {
         const id = interaction.user.id;
         ensureUser(id);
 
-        if (type === 'element') {
-            // FIX: Take up to 2 items from the temp list and save them to finalized
-            const currentTemp = userData[id].temp[type] || [];
-            
-            // We'll take the 2 most recent spins, but you can also make it unique if you prefer.
-            // Let's take the 2 most recent unique elements.
-            const uniqueItems = [];
-            for (let i = currentTemp.length - 1; i >= 0; i--) {
-                const item = currentTemp[i].item;
-                if (!uniqueItems.includes(item)) {
-                    uniqueItems.push(item);
-                }
-                if (uniqueItems.length === 2) break;
-            }
-            
-            // Reverse so they are in the order they were spun
-            userData[id].finalized[type] = uniqueItems.reverse();
-        } else {
-            const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
-            userData[id].finalized[type] = lastItem ? lastItem.item : null;
-        }
+        const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
+        userData[id].finalized[type] = lastItem ? lastItem.item : null;
 
-        userData[id].temp[type] = []; // Clear temp list
+        userData[id].temp[type] = []; 
         saveData();
 
         await interaction.update({ content: `✅ You finalized your ${type}!`, embeds: [], components: [] });
@@ -215,34 +196,26 @@ client.on('messageCreate', async msg => {
     const id = msg.author.id;
     ensureUser(id);
 
-    if (cmd === 'clan' || cmd === 'element' || cmd === 'trait') return spinCommand(msg, cmd);
+    if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') return spinCommand(msg, cmd);
 
     if (cmd === 'check') {
         try {
             let target = msg.mentions.users.first() || msg.author;
             ensureUser(target.id);
-            
             const data = userData[target.id].finalized;
             
             const clan = data.clan || 'None';
             const trait = data.trait || 'None';
-            
-            // FIX: Robustly display elements
-            let elements = 'None';
-            if (Array.isArray(data.element) && data.element.length > 0) {
-                // Filter out any null/undefined just in case
-                const validElements = data.element.filter(e => e != null);
-                if (validElements.length > 0) {
-                    elements = validElements.join(', ');
-                }
-            }
+            const e1 = data.element1 || 'None';
+            const e2 = data.element2 || 'None';
 
             const embed = new EmbedBuilder()
                 .setTitle(`📜 ${target.username}'s Specs`)
                 .setColor(0x00ff00)
                 .addFields(
                     { name: 'Clan', value: String(clan), inline: true },
-                    { name: 'Elements', value: String(elements), inline: true },
+                    { name: 'Element 1', value: String(e1), inline: true },
+                    { name: 'Element 2', value: String(e2), inline: true },
                     { name: 'Trait', value: String(trait), inline: true }
                 );
 
@@ -254,7 +227,7 @@ client.on('messageCreate', async msg => {
     }
 
     if (cmd === 'cmds') {
-        return msg.reply(`**Commands:** !clan !element !trait !check @User !cmds !announce [message]`);
+        return msg.reply(`**Commands:** !clan !element1 !element2 !trait !check @User !cmds !announce [message]`);
     }
 
     if (cmd === 'announce') {

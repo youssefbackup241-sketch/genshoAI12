@@ -1,158 +1,195 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require('discord.js');
+require("dotenv").config();
+
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require("discord.js");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.MessageContent
   ]
 });
 
-const PREFIX = "!";
-const warnings = new Map();
-const spins = new Map();
+// ===== STORAGE =====
+const users = {};
 
-// ================= AUTO MOD =================
-const bannedWords = [
-  "nigger", "nigga", "faggot", "retard", "kys",
-  "n1gg", "ni99", "n!gg", "nigg@", "n!gga"
+// ===== RESET DAILY =====
+setInterval(() => {
+  for (let id in users) {
+    users[id].clanSpins = 0;
+    users[id].elementSpins = 0;
+    users[id].traitSpins = 0;
+  }
+  console.log("Daily spins reset");
+}, 24 * 60 * 60 * 1000);
+
+// ===== CLANS =====
+const clans = [
+  { name: "Uchiha", chance: 15 },
+  { name: "Senju", chance: 15 },
+  { name: "Otsutsuki", chance: 15 },
+  { name: "Hyuga", chance: 20 },
+  { name: "Nara", chance: 20 },
+  { name: "Inuzuka", chance: 15 }
 ];
 
-client.on("messageCreate", async message => {
-  if (message.author.bot) return;
+// ===== ELEMENTS =====
+const elements = [
+  { name: "Fire", chance: 20 },
+  { name: "Water", chance: 20 },
+  { name: "Wind", chance: 20 },
+  { name: "Lightning", chance: 20 },
+  { name: "Earth", chance: 15 },
+  { name: "Wood", chance: 5 }
+];
 
-  const content = message.content.toLowerCase().replace(/[^a-z0-9]/g, "");
+// ===== TRAITS =====
+const traits = [
+  { name: "Clan Specialist", rarity: "Mythical", chance: 1 },
 
-  for (let word of bannedWords) {
-    if (content.includes(word)) {
-      await message.delete().catch(() => {});
-      return handleWarning(message);
-    }
-  }
+  { name: "Analytical Eye", rarity: "Legendary", chance: 6 },
+  { name: "Jutsu Amplification", rarity: "Legendary", chance: 6 },
+  { name: "Kekkei Genkai Proficiency", rarity: "Legendary", chance: 6 },
 
-  if (!message.content.startsWith(PREFIX)) return;
+  { name: "Elemental Affinity Mastery", rarity: "Epic", chance: 13 },
+  { name: "Illusion/Genjutsu Potency", rarity: "Epic", chance: 13 },
+  { name: "Iryojutsu Proficiency", rarity: "Epic", chance: 13 },
 
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
+  { name: "Fuinjutsu Technique Expertise", rarity: "Rare", chance: 14 },
+  { name: "Scientist", rarity: "Rare", chance: 14 },
+  { name: "Superhuman Physique", rarity: "Rare", chance: 14 }
+];
 
-  // ================= PING =================
-  if (command === "ping") {
-    return message.reply("Pong!");
-  }
+// ===== RNG FUNCTION =====
+function roll(list) {
+  let rand = Math.random() * 100;
+  let sum = 0;
 
-  // ================= ANNOUNCE =================
-  if (command === "announce") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
-
-    const text = args.join(" ");
-    const embed = new EmbedBuilder()
-      .setColor("Blue")
-      .setDescription(text);
-
-    return message.channel.send({ embeds: [embed] });
-  }
-
-  // ================= POLL =================
-  if (command === "poll") {
-    const text = args.join(" ");
-    const embed = new EmbedBuilder()
-      .setColor("Green")
-      .setTitle("📊 Poll")
-      .setDescription(text);
-
-    const msg = await message.channel.send({ embeds: [embed] });
-    await msg.react("✅");
-    await msg.react("❌");
-  }
-
-  // ================= ELEMENT SPIN =================
-  if (command === "element") {
-    if (!checkSpin(message.author.id, "element")) {
-      return message.reply("You used all 5 element spins today.");
-    }
-
-    const roll = Math.random() * 100;
-    let element;
-
-    if (roll <= 5) element = "🌳 Wood (RARE)";
-    else {
-      const elements = ["🔥 Fire", "💧 Water", "⚡ Lightning", "🌪 Wind", "🌍 Earth"];
-      element = elements[Math.floor(Math.random() * elements.length)];
-    }
-
-    return message.reply(`You got: **${element}**`);
-  }
-
-  // ================= CLAN SPIN =================
-  if (command === "clan") {
-    if (!checkSpin(message.author.id, "clan")) {
-      return message.reply("You used all 5 clan spins today.");
-    }
-
-    const roll = Math.random() * 100;
-    let clan;
-
-    if (roll <= 15) {
-      const rare = ["Uchiha", "Senju", "Otsutsuki"];
-      clan = rare[Math.floor(Math.random() * rare.length)];
-    } else {
-      const normal = ["Hyuga", "Inuzuka", "Aburame", "Nara", "Akimichi"];
-      clan = normal[Math.floor(Math.random() * normal.length)];
-    }
-
-    return message.reply(`You got clan: **${clan}**`);
-  }
-});
-
-// ================= WARNING SYSTEM =================
-async function handleWarning(message) {
-  const id = message.author.id;
-  let count = warnings.get(id) || 0;
-  count++;
-  warnings.set(id, count);
-
-  if (count === 1) {
-    message.channel.send(`${message.author}, verbal warning.`);
-  } else if (count === 2) {
-    await message.member.timeout(60 * 60 * 1000).catch(() => {});
-    message.channel.send(`${message.author} muted for 1 hour.`);
-  } else if (count === 3) {
-    await message.member.timeout(24 * 60 * 60 * 1000).catch(() => {});
-    message.channel.send(`${message.author} muted for 24 hours.`);
-  } else if (count >= 4) {
-    await message.member.kick().catch(() => {});
-    message.channel.send(`${message.author} has been kicked.`);
+  for (let item of list) {
+    sum += item.chance;
+    if (rand <= sum) return item;
   }
 }
 
-// ================= SPIN LIMIT =================
-function checkSpin(userId, type) {
-  const now = Date.now();
-  if (!spins.has(userId)) spins.set(userId, {});
-
-  const userData = spins.get(userId);
-
-  if (!userData[type]) {
-    userData[type] = { count: 0, time: now };
-  }
-
-  // reset after 24h
-  if (now - userData[type].time > 86400000) {
-    userData[type] = { count: 0, time: now };
-  }
-
-  if (userData[type].count >= 5) return false;
-
-  userData[type].count++;
-  return true;
-}
-
-// ================= READY =================
+// ===== READY =====
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ================= LOGIN =================
+// ===== MESSAGE =====
+client.on("messageCreate", async (msg) => {
+  if (!msg.guild || msg.author.bot) return;
+
+  const id = msg.author.id;
+
+  if (!users[id]) {
+    users[id] = {
+      clan: null,
+      element: null,
+      trait: null,
+      clanSpins: 0,
+      elementSpins: 0,
+      traitSpins: 0
+    };
+  }
+
+  // ===== AUTOMOD =====
+  const banned = ["nigger", "nigga", "faggot", "retard"];
+  if (banned.some(word => msg.content.toLowerCase().includes(word))) {
+    await msg.delete();
+    msg.channel.send(`${msg.author}, watch your language.`);
+    return;
+  }
+
+  // ===== CLAN =====
+  if (msg.content === "!clan") {
+    if (users[id].clanSpins >= 5)
+      return msg.reply("❌ You used all clan spins today.");
+
+    const result = roll(clans);
+    users[id].clan = result.name;
+    users[id].clanSpins++;
+
+    msg.reply(`🧬 You got: **${result.name}**`);
+  }
+
+  // ===== ELEMENT =====
+  if (msg.content === "!element") {
+    if (users[id].elementSpins >= 5)
+      return msg.reply("❌ You used all element spins today.");
+
+    const result = roll(elements);
+    users[id].element = result.name;
+    users[id].elementSpins++;
+
+    msg.reply(`🌿 You got: **${result.name}**`);
+  }
+
+  // ===== TRAIT =====
+  if (msg.content === "!trait") {
+    if (users[id].traitSpins >= 5)
+      return msg.reply("❌ You used all trait spins today.");
+
+    const result = roll(traits);
+    users[id].trait = result.name;
+    users[id].traitSpins++;
+
+    msg.reply(`⚡ You got: **${result.name}** (${result.rarity})`);
+  }
+
+  // ===== STAFF CHECK =====
+  if (msg.content.startsWith("!check")) {
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return;
+
+    const user = msg.mentions.users.first();
+    if (!user) return msg.reply("Mention a user.");
+
+    const data = users[user.id];
+    if (!data) return msg.reply("No data.");
+
+    msg.reply(`
+👤 ${user.username}
+Clan: ${data.clan || "None"}
+Element: ${data.element || "None"}
+Trait: ${data.trait || "None"}
+    `);
+  }
+
+  // ===== ANNOUNCE =====
+  if (msg.content.startsWith("!announce")) {
+    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator))
+      return;
+
+    const text = msg.content.slice(10);
+
+    const embed = new EmbedBuilder()
+      .setTitle("📢 Announcement")
+      .setDescription(text)
+      .setColor("Red");
+
+    msg.channel.send({ embeds: [embed] });
+  }
+
+  // ===== POLL =====
+  if (msg.content.startsWith("!poll")) {
+    const text = msg.content.slice(6);
+
+    const embed = new EmbedBuilder()
+      .setTitle("📊 Poll")
+      .setDescription(text)
+      .setColor("Blue");
+
+    const poll = await msg.channel.send({ embeds: [embed] });
+    await poll.react("👍");
+    await poll.react("👎");
+  }
+
+  // ===== PING =====
+  if (msg.content === "!ping") {
+    msg.reply("🏓 Pong!");
+  }
+});
+
+// ===== LOGIN =====
 client.login(process.env.DISCORD_TOKEN);

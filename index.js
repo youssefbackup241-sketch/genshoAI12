@@ -9,7 +9,14 @@ require('dotenv').config();
 
 const DATABASE_FILE = './database.json';
 let userData = {};
-if (fs.existsSync(DATABASE_FILE)) userData = JSON.parse(fs.readFileSync(DATABASE_FILE));
+if (fs.existsSync(DATABASE_FILE)) {
+    try {
+        userData = JSON.parse(fs.readFileSync(DATABASE_FILE));
+    } catch (e) {
+        console.error("Failed to parse database.json, starting fresh.", e);
+        userData = {};
+    }
+}
 
 // ----- CONFIG -----
 const CLANS = [
@@ -72,18 +79,37 @@ const rarityEmoji = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "�
 
 // ---------------- UTILS ----------------
 function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
-function ensureUser(id) {
-    if (!userData[id]) userData[id] = { spins: { clan: 10, element: 10, trait: 5 }, temp: { clan: [], element: [], trait: [] }, finalized: { clan: null, element: [], trait: null } };
 
-    // FIX (Bug 2): Ensure finalized.element is always an array, even for users
-    // created before this field existed or if it was saved as null.
+/**
+ * Ensures user data exists and follows the expected structure.
+ * This function also "heals" old data if it's missing fields or has the wrong types.
+ */
+function ensureUser(id) {
+    if (!userData[id]) {
+        userData[id] = { 
+            spins: { clan: 10, element: 10, trait: 5 }, 
+            temp: { clan: [], element: [], trait: [] }, 
+            finalized: { clan: null, element: [], trait: null } 
+        };
+    }
+
+    // --- HEAL OLD/MALFORMED DATA ---
+    if (!userData[id].spins) userData[id].spins = { clan: 10, element: 10, trait: 5 };
+    if (!userData[id].temp) userData[id].temp = { clan: [], element: [], trait: [] };
+    if (!userData[id].finalized) userData[id].finalized = { clan: null, element: [], trait: null };
+
+    // Ensure finalized.element is ALWAYS an array (prevents crash in !check)
     if (!Array.isArray(userData[id].finalized.element)) {
         userData[id].finalized.element = [];
     }
 }
+
 function weightedRandom(arr) {
     const pool = [];
-    for (let obj of arr) for (let i = 0; i < (RARITY_WEIGHTS[obj.rarity] || 1); i++) pool.push(obj);
+    for (let obj of arr) {
+        const weight = RARITY_WEIGHTS[obj.rarity] || 1;
+        for (let i = 0; i < weight; i++) pool.push(obj);
+    }
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -91,41 +117,40 @@ function weightedRandom(arr) {
 async function spinCommand(msg, type) {
     const id = msg.author.id;
     ensureUser(id);
+    
     if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
 
-    // FIX (Bug 1): Determine the max allowed duplicates per type.
-    // For 'element' the temp list can hold up to 2 items, so allow up to 2 of
-    // the same result; for all other types only 1 is allowed.
-    const maxDupes = type === 'element' ? 2 : 1;
-
+    // Guard against duplicate result spam (keeps things fair)
+    const maxDupesInTemp = type === 'element' ? 2 : 1;
     let result;
     let attempts = 0;
     do {
         result = weightedRandom(type === 'clan' ? CLANS : type === 'element' ? ELEMENTS : TRAITS);
         attempts++;
-    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= maxDupes && attempts < 10);
+    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= maxDupesInTemp && attempts < 10);
 
-    // FIX (Bug 1): Only refund the spin when the result is a true duplicate
-    // (already appears in temp). Push the result first so the count is accurate,
-    // then decide whether to subtract.
-    const isDuplicate = userData[id].temp[type].some(x => x.item === result.item);
+    // FIX: Back-to-back refund logic
+    // We check the LAST item in temp. If it matches the current result, it's a refund.
+    const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
+    const isBackToBackDupe = lastResult && lastResult.item === result.item;
+
     userData[id].temp[type].push(result);
 
-    if (!isDuplicate) {
-        // New result — consume one spin.
+    if (!isBackToBackDupe) {
+        // Not a back-to-back duplicate, consume a spin.
         userData[id].spins[type]--;
     }
-    // Duplicate result — spin is free (no change to spin count).
+    // If it WAS a back-to-back duplicate, the spin count doesn't change (refund).
 
     saveData();
 
     const embed = new EmbedBuilder()
         .setTitle(`🎲 ${type.toUpperCase()} Spin Result`)
-        .setColor({ Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0xff4500, Rare: 0x1e90ff, Common: 0xaaaaaa }[result.rarity])
-        .setDescription(`${rarityEmoji[result.rarity]} **${result.item}** (${result.rarity})${isDuplicate ? '\n*(Duplicate — spin refunded!)*' : ''}`)
+        .setColor({ Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0xff4500, Rare: 0x1e90ff, Common: 0xaaaaaa }[result.rarity] || 0x000000)
+        .setDescription(`${rarityEmoji[result.rarity] || '❓'} **${result.item}** (${result.rarity})${isBackToBackDupe ? '\n*(Back-to-back Duplicate — spin refunded!)*' : ''}`)
         .addFields(
             { name: 'Spins left', value: `${userData[id].spins[type]}`, inline: true },
-            { name: 'Temp results', value: userData[id].temp[type].map(x => `${rarityEmoji[x.rarity]} ${x.item}`).join(', ') || 'None', inline: false }
+            { name: 'Temp results', value: userData[id].temp[type].map(x => `${rarityEmoji[x.rarity] || ''} ${x.item}`).join(', ') || 'None', inline: false }
         )
         .setFooter({ text: 'Click Finalize to lock your spin!' });
 
@@ -145,12 +170,17 @@ client.on(Events.InteractionCreate, async interaction => {
         const id = interaction.user.id;
         ensureUser(id);
 
-        if (type === 'element' && userData[id].temp[type].length > 2) userData[id].temp[type] = userData[id].temp[type].slice(0,2);
+        // Finalize logic
+        if (type === 'element') {
+            // For elements, we keep up to 2 items
+            userData[id].finalized[type] = userData[id].temp[type].slice(0, 2).map(x => x.item);
+        } else {
+            // For others, we take the most recent (last) item
+            const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
+            userData[id].finalized[type] = lastItem ? lastItem.item : null;
+        }
 
-        if (type === 'element') userData[id].finalized[type] = userData[id].temp[type].map(x=>x.item);
-        else userData[id].finalized[type] = userData[id].temp[type][0] || null;
-
-        userData[id].temp[type] = [];
+        userData[id].temp[type] = []; // Clear temp list
         saveData();
 
         await interaction.update({ content: `✅ You finalized your ${type}!`, embeds: [], components: [] });
@@ -168,26 +198,36 @@ client.on('messageCreate', async msg => {
     if (cmd === 'clan' || cmd === 'element' || cmd === 'trait') return spinCommand(msg, cmd);
 
     if (cmd === 'check') {
-        let target = msg.mentions.users.first() || msg.author;
-        ensureUser(target.id);
-        const data = userData[target.id].finalized;
+        try {
+            let target = msg.mentions.users.first() || msg.author;
+            ensureUser(target.id);
+            
+            const data = userData[target.id].finalized;
+            
+            // Extra safe extraction for the embed
+            const clan = data.clan || 'None';
+            const trait = data.trait || 'None';
+            
+            // Check if element exists and is an array, then join it.
+            let elements = 'None';
+            if (Array.isArray(data.element) && data.element.length > 0) {
+                elements = data.element.join(', ');
+            }
 
-        // FIX (Bug 2): Guard against element being null/undefined before calling
-        // .length or .join — ensureUser above already normalises it to [].
-        const elementValue = Array.isArray(data.element) && data.element.length > 0
-            ? data.element.join(', ')
-            : 'None';
+            const embed = new EmbedBuilder()
+                .setTitle(`📜 ${target.username}'s Specs`)
+                .setColor(0x00ff00)
+                .addFields(
+                    { name: 'Clan', value: String(clan), inline: true },
+                    { name: 'Elements', value: String(elements), inline: true },
+                    { name: 'Trait', value: String(trait), inline: true }
+                );
 
-        const embed = new EmbedBuilder()
-            .setTitle(`📜 ${target.username}'s Specs`)
-            .setColor(0x00ff00)
-            .addFields(
-                { name: 'Clan', value: data.clan || 'None', inline: true },
-                { name: 'Elements', value: elementValue, inline: true },
-                { name: 'Trait', value: data.trait || 'None', inline: true }
-            );
-
-        return msg.reply({ embeds: [embed] });
+            return msg.reply({ embeds: [embed] });
+        } catch (err) {
+            console.error("Error in !check command:", err);
+            return msg.reply("❌ An error occurred while checking specs. Data might be corrupted.");
+        }
     }
 
     if (cmd === 'cmds') {

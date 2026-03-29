@@ -21,33 +21,42 @@ if (fs.existsSync(DATABASE_FILE)) {
 
 // ----- CONFIG -----
 const CLANS = [
+    // Mythical
     { item: "Ōtsutsuki", rarity: "Mythical", emoji: "👁️" },
     { item: "Kaguya", rarity: "Mythical", emoji: "🪐" },
+    
+    // Legendary
     { item: "Uchiha", rarity: "Legendary", emoji: "🔥" },
     { item: "Senju", rarity: "Legendary", emoji: "🌳" },
     { item: "Hyuga", rarity: "Legendary", emoji: "👁️" },
     { item: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
-    { item: "Yuki", rarity: "Epic", emoji: "❄️" },
-    { item: "Hozuki", rarity: "Epic", emoji: "💧" },
-    { item: "Hoshigaki", rarity: "Epic", emoji: "🦈" },
+    
+    // Epic
     { item: "Chinoike", rarity: "Epic", emoji: "🩸" },
     { item: "Jugo", rarity: "Epic", emoji: "🌿" },
     { item: "Kurama", rarity: "Epic", emoji: "🦊" },
-    { item: "Sabaku", rarity: "Epic", emoji: "🏜️" },
-    { item: "Shirogane", rarity: "Rare", emoji: "⚪" },
+    { item: "Lee", rarity: "Epic", emoji: "🥋" },
+    { item: "Yuki", rarity: "Epic", emoji: "❄️" },
+    { item: "Yamanaka", rarity: "Epic", emoji: "🧠" },
+    
+    // Rare
+    { item: "Aburame", rarity: "Rare", emoji: "🐜" },
     { item: "Yotsuki", rarity: "Rare", emoji: "🟡" },
     { item: "Fūma", rarity: "Rare", emoji: "🪓" },
     { item: "Iburi", rarity: "Rare", emoji: "💨" },
     { item: "Hatake", rarity: "Rare", emoji: "👒" },
-    { item: "Kamizuru", rarity: "Rare", emoji: "🦅" },
+    { item: "Akimichi", rarity: "Rare", emoji: "🍙" },
+    { item: "Sabaku", rarity: "Rare", emoji: "🏜️" },
     { item: "Sarutobi", rarity: "Rare", emoji: "🐒" },
-    { item: "Aburame", rarity: "Common", emoji: "🐜" },
-    { item: "Akimichi", rarity: "Common", emoji: "🍙" },
+    
+    // Common
     { item: "Nara", rarity: "Common", emoji: "🦌" },
-    { item: "Yamanaka", rarity: "Common", emoji: "🧠" },
     { item: "Inuzuka", rarity: "Common", emoji: "🐕" },
     { item: "Shimura", rarity: "Common", emoji: "🪓" },
-    { item: "Lee", rarity: "Common", emoji: "🥋" }
+    { item: "Kamizuru", rarity: "Common", emoji: "🦅" },
+    { item: "Hozuki", rarity: "Common", emoji: "💧" },
+    { item: "Hoshigaki", rarity: "Common", emoji: "🦈" },
+    { item: "Shirogane", rarity: "Common", emoji: "⚪" }
 ];
 
 const ELEMENTS = [
@@ -114,7 +123,6 @@ function weightedRandom(arr, weights, isLucky) {
     const pool = [];
     for (let obj of arr) {
         let weight = weights[obj.rarity] || 1;
-        // 2x odds for non-common tiers if lucky
         if (isLucky && obj.rarity !== 'Common') {
             weight *= 2;
         }
@@ -139,14 +147,17 @@ async function findUser(msg, args) {
 }
 
 // ---------------- SPIN LOGIC ----------------
-async function performSpin(msg, type, isLucky) {
-    const id = msg.author.id;
+async function performSpin(source, type, isLucky) {
+    const user = source.user || source.author;
+    const id = user.id;
     ensureUser(id);
 
     if (isLucky && userData[id].luckySpins[type] <= 0) {
-        return msg.reply(`❌ You don't have any **${type}** Lucky Spins left!`);
+        const msg = `❌ You don't have any **${type}** Lucky Spins left!`;
+        return source.replied || source.deferred ? source.followUp(msg) : source.reply(msg);
     } else if (!isLucky && userData[id].spins[type] <= 0) {
-        return msg.reply(`❌ You don't have any **${type}** Normal Spins left!`);
+        const msg = `❌ You don't have any **${type}** Normal Spins left!`;
+        return source.replied || source.deferred ? source.followUp(msg) : source.reply(msg);
     }
 
     let weights = type === 'clan' ? CLAN_RARITY_WEIGHTS : type.startsWith('element') ? ELEMENT_RARITY_WEIGHTS : DEFAULT_RARITY_WEIGHTS;
@@ -164,7 +175,6 @@ async function performSpin(msg, type, isLucky) {
 
     userData[id].temp[type].push(result);
 
-    // Consume the resource (back-to-back dupes are free)
     if (!isBackToBackDupe) {
         if (isLucky) userData[id].luckySpins[type]--;
         else userData[id].spins[type]--;
@@ -174,7 +184,7 @@ async function performSpin(msg, type, isLucky) {
 
     const embed = new EmbedBuilder()
         .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
-        .setAuthor({ name: msg.author.username, iconURL: msg.author.displayAvatarURL() })
+        .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
         .setColor(RARITY_COLORS[result.rarity] || 0x000000)
         .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (2x Odds for Rare+)*' : ''}`)
         .addFields(
@@ -189,7 +199,12 @@ async function performSpin(msg, type, isLucky) {
         new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success)
     );
 
-    await msg.reply({ embeds: [embed], components: [row] });
+    // If source is a button interaction, UPDATE it instead of deleting
+    if (source.isButton && source.isButton()) {
+        await source.update({ embeds: [embed], components: [row] });
+    } else {
+        await source.reply({ embeds: [embed], components: [row] });
+    }
 }
 
 // ---------------- INTERACTION HANDLER ----------------
@@ -198,7 +213,6 @@ client.on(Events.InteractionCreate, async interaction => {
         if (interaction.isButton()) {
             const [action, type, originalUserId] = interaction.customId.split('_');
             
-            // For choice buttons, only the command user can click
             if (originalUserId && interaction.user.id !== originalUserId) {
                 return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
             }
@@ -223,7 +237,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (action === 'spinchoice') {
                 const isLucky = type.endsWith('lucky');
                 const realType = type.replace('lucky', '');
-                await interaction.message.delete().catch(() => {});
+                // Instead of deleting, we pass the interaction to performSpin which will UPDATE it
                 await performSpin(interaction, realType, isLucky);
             }
         }

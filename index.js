@@ -2,7 +2,11 @@ const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.j
 const fs = require('fs');
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
@@ -64,7 +68,7 @@ client.on('messageCreate', async msg=>{
     const args = msg.content.trim().split(/ +/g);
     const cmd = args.shift().toLowerCase();
 
-    // Spin
+    // Spin commands
     if(["!element","!clan","!trait"].includes(cmd)){
         const type = cmd.slice(1);
         if(!db[msg.author.id]) db[msg.author.id] = { spins: { element: [], clan: [], trait: [] }, finalized: { element: [], clan: null, trait: null }};
@@ -77,7 +81,7 @@ client.on('messageCreate', async msg=>{
 
         const embed = new EmbedBuilder()
             .setTitle(`${type.toUpperCase()} SPIN`)
-            .setDescription(`${rarityEmojis[picked.rarity]} **${picked.name}** (${picked.rarity})\nClick ✅ to finalize`)
+            .setDescription(`${rarityEmojis[picked.rarity]} **${picked.name}** (${picked.rarity})\nReact ✅ to finalize`)
             .setColor(0x00FF00);
 
         const msgEmbed = await msg.channel.send({embeds:[embed]});
@@ -94,7 +98,7 @@ client.on('messageCreate', async msg=>{
         });
     }
 
-    // Check
+    // Check finalized
     if(cmd==="!check"){
         const user = msg.mentions.users.first()||msg.author;
         if(!db[user.id]||!db[user.id].finalized) return msg.reply("No finalized data!");
@@ -105,7 +109,7 @@ client.on('messageCreate', async msg=>{
         msg.channel.send({embeds:[embed]});
     }
 
-    // Announcement
+    // Announce
     if(cmd==="!announce"){
         const text = args.join(" ");
         if(!text) return msg.reply("Message required!");
@@ -115,7 +119,7 @@ client.on('messageCreate', async msg=>{
         msg.channel.send({embeds:[embed]});
     }
 
-    // Cmds
+    // Command list
     if(cmd==="!cmds"){
         const embed = new EmbedBuilder()
             .setTitle("Commands")

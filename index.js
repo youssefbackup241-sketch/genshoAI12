@@ -1,5 +1,5 @@
 // index.js
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
 const fs = require('fs');
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -117,6 +117,20 @@ function weightedRandom(arr, weights) {
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
+async function findUser(msg, args) {
+    const mention = msg.mentions.users.first();
+    if (mention) return mention;
+    const id = args[0];
+    if (id && /^\d{17,20}$/.test(id)) {
+        try {
+            return await client.users.fetch(id);
+        } catch (err) {
+            return null;
+        }
+    }
+    return null;
+}
+
 // ---------------- SPIN COMMAND ----------------
 async function spinCommand(msg, type) {
     try {
@@ -198,19 +212,22 @@ client.on(Events.InteractionCreate, async interaction => {
         }
 
         if (interaction.isStringSelectMenu()) {
-            const [action, targetId, category] = interaction.customId.split('_');
+            const [action, targetId, category, originalUserId] = interaction.customId.split('_');
             
+            if (originalUserId && interaction.user.id !== originalUserId) {
+                return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
+            }
+
             if (action === 'givespec-category') {
                 const selectedCategory = interaction.values[0];
                 let items = [];
-                let slotLabel = selectedCategory;
                 
                 if (selectedCategory === 'clan') items = CLANS;
                 else if (selectedCategory === 'element1' || selectedCategory === 'element2') items = ELEMENTS;
                 else if (selectedCategory === 'trait') items = TRAITS;
 
                 const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`givespec-item_${targetId}_${selectedCategory}`)
+                    .setCustomId(`givespec-item_${targetId}_${selectedCategory}_${interaction.user.id}`)
                     .setPlaceholder(`Choose a ${selectedCategory} to give...`)
                     .addOptions(items.slice(0, 25).map(i => ({
                         label: i.item,
@@ -257,11 +274,15 @@ client.on('messageCreate', async msg => {
         }
 
         if (cmd === 'givespec') {
-            const target = msg.mentions.users.first();
-            if (!target) return msg.reply("❌ Please mention a user: `!givespec @User`.");
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return msg.reply("❌ Only Staff (Administrators) can use this command!");
+            }
+
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Please mention a user or provide a valid ID: `!givespec @User` or `!givespec ID`.");
 
             const menu = new StringSelectMenuBuilder()
-                .setCustomId(`givespec-category_${target.id}`)
+                .setCustomId(`givespec-category_${target.id}_none_${msg.author.id}`)
                 .setPlaceholder('Choose a category to give...')
                 .addOptions([
                     { label: 'Clan', value: 'clan', emoji: '⛩️' },
@@ -271,11 +292,11 @@ client.on('messageCreate', async msg => {
                 ]);
 
             const row = new ActionRowBuilder().addComponents(menu);
-            return await msg.reply({ content: `Giving a spec to **${target.username}**. First, choose a category:`, components: [row] });
+            return await msg.reply({ content: `Giving a spec to **${target.username}** (${target.id}). First, choose a category:`, components: [row] });
         }
 
         if (cmd === 'check') {
-            let target = msg.mentions.users.first() || msg.author;
+            let target = await findUser(msg, args) || msg.author;
             ensureUser(target.id);
             const data = userData[target.id].finalized;
             
@@ -312,8 +333,13 @@ client.on('messageCreate', async msg => {
         if (cmd === 'announce') {
             const text = args.join(' ');
             if (!text) return await msg.reply('❌ Provide a message to announce.');
-            const embed = new EmbedBuilder().setTitle("📢 ANNOUNCEMENT").setDescription(text).setColor(0xffc107).setTimestamp();
-            return await msg.reply({ embeds: [embed] });
+            
+            // Delete original command message
+            try { await msg.delete(); } catch (e) { console.error("Could not delete announce command message:", e); }
+            
+            // Send clean embed with NO title or header
+            const embed = new EmbedBuilder().setDescription(text).setColor(0xffc107);
+            return await msg.channel.send({ embeds: [embed] });
         }
     } catch (err) {
         console.error("Error in message handler:", err);

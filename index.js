@@ -133,7 +133,6 @@ function weightedRandom(arr, weights, isLucky) {
         const count = Math.max(1, Math.round(weight * 10));
         for (let i = 0; i < count; i++) pool.push(obj);
     }
-    // Safety check if pool is empty (should not happen with our rankings)
     if (pool.length === 0) return arr[Math.floor(Math.random() * arr.length)];
     return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -383,7 +382,7 @@ client.on('messageCreate', async msg => {
         }
 
         if (cmd === 'cmds') {
-            const embed = new EmbedBuilder().setTitle("🎮 BOT COMMANDS").setColor(0x7289da).addFields({ name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false }, { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false }, { name: '🎁 Staff', value: "`!givespec @User`, `!givels @User`, `!wipe @User`, `!resetspins @User`, `!announce [msg]`", inline: false });
+            const embed = new EmbedBuilder().setTitle("🎮 BOT COMMANDS").setColor(0x7289da).addFields({ name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false }, { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false }, { name: '🎁 Staff', value: "`!givespec @User`, `!givels @User`, `!wipe @User`, `!resetspins @User`, `!announce [msg]`, `!purge [number/all]`", inline: false });
             return await msg.reply({ embeds: [embed] });
         }
 
@@ -392,6 +391,17 @@ client.on('messageCreate', async msg => {
             if (!text) return await msg.reply('❌ Provide a message.');
             try { await msg.delete(); } catch (e) {}
             return await msg.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(0xffc107)] });
+        }
+
+        if (cmd === 'purge') {
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
+            let amount = args[0] === 'all' ? 100 : parseInt(args[0]);
+            if (isNaN(amount) || amount < 1 || amount > 100) return msg.reply("❌ Provide a number between 1 and 100, or 'all' (clears 100).");
+            await msg.delete(); // Delete command
+            const deleted = await msg.channel.bulkDelete(amount, true);
+            const reply = await msg.channel.send(`✅ Purged **${deleted.size}** messages.`);
+            setTimeout(() => reply.delete().catch(() => {}), 3000);
+            return;
         }
     } catch (err) { console.error("Error in message handler:", err); }
 });

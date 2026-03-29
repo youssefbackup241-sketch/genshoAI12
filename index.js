@@ -122,15 +122,19 @@ function ensureUser(id) {
 function weightedRandom(arr, weights, isLucky) {
     const pool = [];
     for (let obj of arr) {
+        // If Lucky Spin, remove Common and Rare from the pool
+        if (isLucky && (obj.rarity === 'Common' || obj.rarity === 'Rare')) continue;
+
         let weight = weights[obj.rarity] || 1;
-        // Lucky Spin Effect: 2x for Rare, 5x for Epic, Legendary, Mythical
-        if (isLucky) {
-            if (obj.rarity === 'Rare') weight *= 2;
-            else if (['Epic', 'Legendary', 'Mythical'].includes(obj.rarity)) weight *= 5;
+        // Lucky Spin Effect: 5x boost for Epic, Legendary, Mythical
+        if (isLucky && ['Epic', 'Legendary', 'Mythical'].includes(obj.rarity)) {
+            weight *= 5;
         }
         const count = Math.max(1, Math.round(weight * 10));
         for (let i = 0; i < count; i++) pool.push(obj);
     }
+    // Safety check if pool is empty (should not happen with our rankings)
+    if (pool.length === 0) return arr[Math.floor(Math.random() * arr.length)];
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -188,7 +192,7 @@ async function performSpin(source, type, isLucky) {
         .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
         .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
         .setColor(RARITY_COLORS[result.rarity] || 0x000000)
-        .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (5x Odds for Epic+)*' : ''}`)
+        .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (Guaranteed Epic+, 5x Odds for Leg/Myth!)*' : ''}`)
         .addFields(
             { name: '🔋 Normal Spins', value: `\`${userData[id].spins[type]}\``, inline: true },
             { name: '🍀 Lucky Spins', value: `\`${userData[id].luckySpins[type]}\``, inline: true },

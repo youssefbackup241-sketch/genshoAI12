@@ -1,150 +1,173 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const dotenv = require('dotenv');
+dotenv.config();
 
-// Rarity emojis
-const rarityEmojis = {
-    Mythical: '💎',
-    Legendary: '🌟',
-    Epic: '🔥',
-    Rare: '✨',
-    Common: '⚪'
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+});
+
+// Load or create database
+const dbFile = './database.json';
+let db = { users: {} };
+if (fs.existsSync(dbFile)) db = JSON.parse(fs.readFileSync(dbFile));
+
+const saveDB = () => fs.writeFileSync(dbFile, JSON.stringify(db, null, 2));
+
+// ------------------- DATA -------------------
+const clanList = {
+    Mythical: ['Ōtsutsuki', 'Kaguya'],
+    Legendary: ['Uchiha', 'Senju', 'Hyuga', 'Uzumaki'],
+    Epic: ['Yuki', 'Hozuki', 'Hoshigaki', 'Chinoike', 'Jugo', 'Kurama', 'Sabaku'],
+    Rare: ['Shirogane', 'Yotsuki', 'Fūma', 'Iburi', 'Hatake', 'Kamizuru', 'Sarutobi'],
+    Common: ['Aburame', 'Akimichi', 'Nara', 'Yamanaka', 'Inuzuka', 'Shimura', 'Lee']
 };
 
-// Rarity chances
-const rarityWeights = {
-    Mythical: 1,
-    Legendary: 5,
-    Epic: 15,
-    Rare: 30,
-    Common: 49
-};
-
-// Clans
-const clans = {
-    Mythical: ['Ōtsutsuki','Kaguya'],
-    Legendary: ['Uchiha','Senju','Hyuga','Uzumaki'],
-    Epic: ['Yuki','Hozuki','Hoshigaki','Chinoike','Jugo','Kurama','Sabaku'],
-    Rare: ['Shirogane','Yotsuki','Fūma','Iburi','Hatake','Kamizuru','Sarutobi'],
-    Common: ['Aburame','Akimichi','Nara','Yamanaka','Inuzuka','Shimura','Lee']
-};
-
-// Elements
-const elements = {
-    Mythical: ['Yin','Yang','Chaos','Order'],
+const elementList = {
+    Mythical: ['Yin', 'Yang', 'Chaos', 'Order'],
     Legendary: ['Wood'],
-    Rare: ['Fire','Water','Earth','Wind','Lightning']
+    Rare: ['Fire', 'Water', 'Earth', 'Wind', 'Lightning']
 };
 
-// Traits
-const traits = {
+const traitList = {
+    Mythical: ['Clan Specialist'],
     Legendary: ['Analytical Eye','Jutsu Amplification','Kekkei Genkai Proficiency'],
     Epic: ['Elemental Affinity Mastery','Illusion/Genjutsu Potency','Iryojutsu Proficiency'],
     Rare: ['Fuinjutsu Technique Expertise','Scientist','Superhuman Physique']
 };
 
-// Users database
-const users = {};
+const emojis = {
+    Mythical: '🟣',
+    Legendary: '🟠',
+    Epic: '🔵',
+    Rare: '🟢',
+    Common: '⚪'
+};
 
-// Helpers
-function weightedRandom(typeObj) {
-    const allItems = [];
-    for(const [rarity, items] of Object.entries(typeObj)) {
-        const weight = rarityWeights[rarity] || 1;
-        items.forEach(item => { for(let i=0;i<weight;i++) allItems.push({item, rarity}); });
+const maxSpins = {
+    clan: 10,
+    element: 10,
+    trait: 5
+};
+
+// ------------------- HELPERS -------------------
+function getRandomRarity(list) {
+    const rarities = Object.keys(list);
+    const weights = { Mythical:1, Legendary:3, Epic:5, Rare:10, Common:20 }; // adjust chances
+    const total = rarities.reduce((acc,r)=>acc+weights[r],0);
+    let roll = Math.random()*total;
+    for (const r of rarities) {
+        roll -= weights[r];
+        if (roll <= 0) return r;
     }
-    return allItems[Math.floor(Math.random()*allItems.length)];
+    return 'Common';
 }
 
-function sendSpinEmbed(message, typeName, result) {
-    const embed = new EmbedBuilder()
-        .setTitle(`🎲 ${typeName.toUpperCase()} SPIN!`)
-        .setDescription(`${rarityEmojis[result.rarity]} **${result.item}**\nRarity: **${result.rarity}**`)
-        .setColor('Random');
-    message.reply({ embeds: [embed] });
+function spin(category) {
+    if (category === 'clan') {
+        const rarity = getRandomRarity(clanList);
+        const choices = clanList[rarity];
+        return { name: choices[Math.floor(Math.random()*choices.length)], rarity };
+    } else if (category === 'element') {
+        const rarity = getRandomRarity(elementList);
+        const choices = elementList[rarity];
+        return { name: choices[Math.floor(Math.random()*choices.length)], rarity };
+    } else if (category === 'trait') {
+        const rarity = getRandomRarity(traitList);
+        const choices = traitList[rarity];
+        return { name: choices[Math.floor(Math.random()*choices.length)], rarity };
+    }
 }
 
-// Commands
-client.on('messageCreate', (message) => {
-    if(message.author.bot) return;
-
-    const args = message.content.trim().split(/ +/);
+// ------------------- COMMANDS -------------------
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+    const args = message.content.trim().split(/\s+/);
     const cmd = args.shift().toLowerCase();
 
-    // Initialize user
-    if(!users[message.author.id]) users[message.author.id] = {
-        clanSpins: 10,
-        elementSpins: 10,
-        traitSpins: 5
-    };
-    const user = users[message.author.id];
+    // Initialize user in DB
+    if (!db.users[message.author.id]) db.users[message.author.id] = { clan: null, elements: [], traits: [], spins: { clan:maxSpins.clan, element:maxSpins.element, trait:maxSpins.trait } };
+    const user = db.users[message.author.id];
 
-    const isStaff = message.member.permissions.has('Administrator');
-
-    // Clan spin
-    if(cmd === '!clan') {
-        if(user.clanSpins <= 0) return message.reply('No clan spins left!');
-        const result = weightedRandom(clans);
-        user.clanSpins--;
-        sendSpinEmbed(message, 'Clan', result);
+    // ----- !element -----
+    if (cmd === '!element') {
+        if (user.spins.element <= 0) return message.reply('You have no element spins left!');
+        const result = spin('element');
+        user.spins.element--;
+        if (user.elements.length < 2) user.elements.push(result);
+        saveDB();
+        const embed = new EmbedBuilder()
+            .setTitle('Element Spin')
+            .setDescription(`${emojis[result.rarity]} **${result.name}** (${result.rarity})`)
+            .setColor('Purple');
+        return message.reply({ embeds: [embed] });
     }
 
-    // Element spin
-    if(cmd === '!element') {
-        if(user.elementSpins <= 0) return message.reply('No element spins left!');
-        const result = weightedRandom(elements);
-        user.elementSpins--;
-        sendSpinEmbed(message, 'Element', result);
+    // ----- !clan -----
+    if (cmd === '!clan') {
+        if (user.spins.clan <= 0) return message.reply('You have no clan spins left!');
+        const result = spin('clan');
+        user.spins.clan--;
+        user.clan = result;
+        saveDB();
+        const embed = new EmbedBuilder()
+            .setTitle('Clan Spin')
+            .setDescription(`${emojis[result.rarity]} **${result.name}** (${result.rarity})`)
+            .setColor('Orange');
+        return message.reply({ embeds: [embed] });
     }
 
-    // Trait spin
-    if(cmd === '!trait') {
-        if(user.traitSpins <= 0) return message.reply('No trait spins left!');
-        const result = weightedRandom(traits);
-        user.traitSpins--;
-        sendSpinEmbed(message, 'Trait', result);
+    // ----- !trait -----
+    if (cmd === '!trait') {
+        if (user.spins.trait <= 0) return message.reply('You have no trait spins left!');
+        const result = spin('trait');
+        user.spins.trait--;
+        user.traits.push(result);
+        saveDB();
+        const embed = new EmbedBuilder()
+            .setTitle('Trait Spin')
+            .setDescription(`${emojis[result.rarity]} **${result.name}** (${result.rarity})`)
+            .setColor('Blue');
+        return message.reply({ embeds: [embed] });
     }
 
-    // Staff commands
-    if(isStaff) {
-        // Wipe
-        if(cmd === '!wipe') {
-            const targetId = args[0]?.replace(/[<@!>]/g,'');
-            if(targetId) {
-                users[targetId] = { clanSpins:10, elementSpins:10, traitSpins:5 };
-                message.reply(`Wiped spins for <@${targetId}>`);
-            }
-        }
+    // ----- !check -----
+    if (cmd === '!check') {
+        let target = message.author;
+        if (message.mentions.users.size) target = message.mentions.users.first();
+        const tUser = db.users[target.id];
+        if (!tUser) return message.reply('No data for this user.');
+        const embed = new EmbedBuilder()
+            .setTitle(`${target.username}'s Specs`)
+            .setDescription(
+                `**Clan:** ${tUser.clan ? `${emojis[tUser.clan.rarity]} ${tUser.clan.name}` : 'None'}\n`+
+                `**Elements:** ${tUser.elements.length ? tUser.elements.map(e=>`${emojis[e.rarity]} ${e.name}`).join(', ') : 'None'}\n`+
+                `**Traits:** ${tUser.traits.length ? tUser.traits.map(t=>`${emojis[t.rarity]} ${t.name}`).join(', ') : 'None'}`
+            )
+            .setColor('Green');
+        return message.reply({ embeds: [embed] });
+    }
 
-        // Add spins
-        if(cmd === '!addspin') {
-            const targetId = args[0]?.replace(/[<@!>]/g,'');
-            const type = args[1]; // clan/element/trait
-            const amount = parseInt(args[2]);
-            if(targetId && type && !isNaN(amount)) {
-                if(!users[targetId]) users[targetId] = { clanSpins:0, elementSpins:0, traitSpins:0 };
-                users[targetId][type+'Spins'] += amount;
-                message.reply(`Added ${amount} ${type} spins to <@${targetId}>`);
-            }
-        }
+    // ----- !announce -----
+    if (cmd === '!announce') {
+        if (!message.member.permissions.has('Administrator')) return;
+        const content = args.join(' ');
+        if (!content) return message.reply('Please provide a message!');
+        const embed = new EmbedBuilder()
+            .setTitle('📢 Announcement')
+            .setDescription(content)
+            .setColor('Yellow');
+        return message.channel.send({ embeds: [embed] });
+    }
 
-        // Set specs
-        if(cmd === '!setspecs') {
-            const targetId = args[0]?.replace(/[<@!>]/g,'');
-            const type = args[1]; // clan/element/trait
-            const value = args.slice(2).join(' ');
-            if(targetId && type && value) {
-                if(!users[targetId]) users[targetId] = { clanSpins:0, elementSpins:0, traitSpins:0 };
-                users[targetId][type+'Spec'] = value;
-                users[targetId][type+'Spins'] = 0; // reset spins after manual set
-                message.reply(`Set ${type} spec for <@${targetId}> to ${value}`);
-            }
-        }
-
-        // Command list
-        if(cmd === '!cmds') {
-            message.reply('**Staff Commands:** !clan !element !trait !wipe !addspin !setspecs !cmds');
-        }
+    // ----- !cmds -----
+    if (cmd === '!cmds') {
+        const embed = new EmbedBuilder()
+            .setTitle('Command List')
+            .setDescription('!element | !clan | !trait | !check | !announce (staff) | !cmds')
+            .setColor('Blue');
+        return message.reply({ embeds: [embed] });
     }
 });
 

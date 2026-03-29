@@ -123,8 +123,10 @@ function weightedRandom(arr, weights, isLucky) {
     const pool = [];
     for (let obj of arr) {
         let weight = weights[obj.rarity] || 1;
-        if (isLucky && obj.rarity !== 'Common') {
-            weight *= 2;
+        // Lucky Spin Effect: 2x for Rare, 5x for Epic, Legendary, Mythical
+        if (isLucky) {
+            if (obj.rarity === 'Rare') weight *= 2;
+            else if (['Epic', 'Legendary', 'Mythical'].includes(obj.rarity)) weight *= 5;
         }
         const count = Math.max(1, Math.round(weight * 10));
         for (let i = 0; i < count; i++) pool.push(obj);
@@ -186,7 +188,7 @@ async function performSpin(source, type, isLucky) {
         .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
         .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
         .setColor(RARITY_COLORS[result.rarity] || 0x000000)
-        .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (2x Odds for Rare+)*' : ''}`)
+        .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (5x Odds for Epic+)*' : ''}`)
         .addFields(
             { name: '🔋 Normal Spins', value: `\`${userData[id].spins[type]}\``, inline: true },
             { name: '🍀 Lucky Spins', value: `\`${userData[id].luckySpins[type]}\``, inline: true },
@@ -196,10 +198,36 @@ async function performSpin(source, type, isLucky) {
         .setFooter({ text: 'Click Finalize to lock this result!' });
 
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Primary)
     );
 
-    // If source is a button interaction, UPDATE it instead of deleting
+    if (source.isButton && source.isButton()) {
+        await source.update({ embeds: [embed], components: [row] });
+    } else {
+        await source.reply({ embeds: [embed], components: [row] });
+    }
+}
+
+async function showSpinChoice(source, type) {
+    const user = source.user || source.author;
+    const id = user.id;
+    ensureUser(id);
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🎰 ${type.toUpperCase()} SPIN`)
+        .setDescription(`Choose which type of spin you want to use for **${type}**:`)
+        .setColor(0x7289da)
+        .addFields(
+            { name: '🔋 Normal', value: `\`${userData[id].spins[type]}\` remaining`, inline: true },
+            { name: '🍀 Lucky', value: `\`${userData[id].luckySpins[type]}\` remaining`, inline: true }
+        );
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`spinchoice_${type}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`spinchoice_${type}lucky_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Secondary)
+    );
+
     if (source.isButton && source.isButton()) {
         await source.update({ embeds: [embed], components: [row] });
     } else {
@@ -237,8 +265,11 @@ client.on(Events.InteractionCreate, async interaction => {
             if (action === 'spinchoice') {
                 const isLucky = type.endsWith('lucky');
                 const realType = type.replace('lucky', '');
-                // Instead of deleting, we pass the interaction to performSpin which will UPDATE it
                 await performSpin(interaction, realType, isLucky);
+            }
+
+            if (action === 'spinagain') {
+                await showSpinChoice(interaction, type);
             }
         }
 
@@ -294,19 +325,7 @@ client.on('messageCreate', async msg => {
         ensureUser(id);
 
         if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') {
-            const embed = new EmbedBuilder()
-                .setTitle(`🎰 ${cmd.toUpperCase()} SPIN`)
-                .setDescription(`Choose which type of spin you want to use for **${cmd}**:`)
-                .setColor(0x7289da)
-                .addFields(
-                    { name: '🔋 Normal', value: `\`${userData[id].spins[cmd]}\` remaining`, inline: true },
-                    { name: '🍀 Lucky', value: `\`${userData[id].luckySpins[cmd]}\` remaining`, inline: true }
-                );
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`spinchoice_${cmd}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`spinchoice_${cmd}lucky_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Secondary)
-            );
-            return await msg.reply({ embeds: [embed], components: [row] });
+            return await showSpinChoice(msg, cmd);
         }
 
         if (cmd === 'resetspins') {

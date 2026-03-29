@@ -11,7 +11,8 @@ const DATABASE_FILE = './database.json';
 let userData = {};
 if (fs.existsSync(DATABASE_FILE)) {
     try {
-        userData = JSON.parse(fs.readFileSync(DATABASE_FILE));
+        const fileContent = fs.readFileSync(DATABASE_FILE, 'utf8');
+        userData = fileContent ? JSON.parse(fileContent) : {};
     } catch (e) {
         console.error("Failed to parse database.json, starting fresh.", e);
         userData = {};
@@ -92,114 +93,128 @@ function ensureUser(id) {
         };
     }
 
-    // --- HEAL OLD/MALFORMED DATA ---
-    if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 6, element2: 6, trait: 3 };
-    if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [] };
-    if (!userData[id].finalized) userData[id].finalized = { clan: null, element1: null, element2: null, trait: null };
+    // Initialize missing top-level objects
+    if (!userData[id].spins) userData[id].spins = {};
+    if (!userData[id].temp) userData[id].temp = {};
+    if (!userData[id].finalized) userData[id].finalized = {};
 
-    // Migrate old element array to separate slots if necessary
-    if (Array.isArray(userData[id].finalized.element)) {
-        userData[id].finalized.element1 = userData[id].finalized.element[0] || null;
-        userData[id].finalized.element2 = userData[id].finalized.element[1] || null;
-        delete userData[id].finalized.element;
-    }
-    
-    // Ensure separate element slots exist
-    if (userData[id].spins.element !== undefined) {
-        userData[id].spins.element1 = userData[id].spins.element;
-        userData[id].spins.element2 = userData[id].spins.element;
-        delete userData[id].spins.element;
-    }
-    if (!userData[id].spins.element1) userData[id].spins.element1 = 6;
-    if (!userData[id].spins.element2) userData[id].spins.element2 = 6;
-    if (!userData[id].temp.element1) userData[id].temp.element1 = [];
-    if (!userData[id].temp.element2) userData[id].temp.element2 = [];
+    // Heal spins counts
+    if (userData[id].spins.clan === undefined) userData[id].spins.clan = 15;
+    if (userData[id].spins.element1 === undefined) userData[id].spins.element1 = 6;
+    if (userData[id].spins.element2 === undefined) userData[id].spins.element2 = 6;
+    if (userData[id].spins.trait === undefined) userData[id].spins.trait = 3;
+
+    // Heal temp arrays
+    if (!Array.isArray(userData[id].temp.clan)) userData[id].temp.clan = [];
+    if (!Array.isArray(userData[id].temp.element1)) userData[id].temp.element1 = [];
+    if (!Array.isArray(userData[id].temp.element2)) userData[id].temp.element2 = [];
+    if (!Array.isArray(userData[id].temp.trait)) userData[id].temp.trait = [];
+
+    // Heal finalized slots
+    if (userData[id].finalized.clan === undefined) userData[id].finalized.clan = null;
+    if (userData[id].finalized.element1 === undefined) userData[id].finalized.element1 = null;
+    if (userData[id].finalized.element2 === undefined) userData[id].finalized.element2 = null;
+    if (userData[id].finalized.trait === undefined) userData[id].finalized.trait = null;
 }
 
 function weightedRandom(arr, weights) {
     const pool = [];
     for (let obj of arr) {
         const weight = weights[obj.rarity] || 1;
-        for (let i = 0; i < Math.max(1, Math.round(weight * 10)); i++) pool.push(obj);
+        const count = Math.max(1, Math.round(weight * 10));
+        for (let i = 0; i < count; i++) pool.push(obj);
     }
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // ---------------- SPIN COMMAND ----------------
 async function spinCommand(msg, type) {
-    const id = msg.author.id;
-    ensureUser(id);
-    
-    if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
+    try {
+        const id = msg.author.id;
+        ensureUser(id);
+        
+        if (userData[id].spins[type] <= 0) return msg.reply(`❌ No ${type} spins left!`);
 
-    let weights;
-    if (type === 'clan') weights = CLAN_RARITY_WEIGHTS;
-    else if (type.startsWith('element')) weights = ELEMENT_RARITY_WEIGHTS;
-    else weights = DEFAULT_RARITY_WEIGHTS;
+        let weights;
+        if (type === 'clan') weights = CLAN_RARITY_WEIGHTS;
+        else if (type.startsWith('element')) weights = ELEMENT_RARITY_WEIGHTS;
+        else weights = DEFAULT_RARITY_WEIGHTS;
 
-    let result;
-    let attempts = 0;
-    do {
-        result = weightedRandom(type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS, weights);
-        attempts++;
-    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
+        let result;
+        let attempts = 0;
+        do {
+            result = weightedRandom(type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS, weights);
+            attempts++;
+        } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
 
-    const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
-    const isBackToBackDupe = lastResult && lastResult.item === result.item;
+        const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
+        const isBackToBackDupe = lastResult && lastResult.item === result.item;
 
-    userData[id].temp[type].push(result);
-    if (!isBackToBackDupe) userData[id].spins[type]--;
+        userData[id].temp[type].push(result);
+        if (!isBackToBackDupe) userData[id].spins[type]--;
 
-    saveData();
+        saveData();
 
-    const embed = new EmbedBuilder()
-        .setTitle(`🎲 ${type.toUpperCase()} Spin Result`)
-        .setColor({ Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0xff4500, Rare: 0x1e90ff, Common: 0xaaaaaa }[result.rarity] || 0x000000)
-        .setDescription(`${rarityEmoji[result.rarity] || '❓'} **${result.item}** (${result.rarity})${isBackToBackDupe ? '\n*(Back-to-back Duplicate — spin refunded!)*' : ''}`)
-        .addFields(
-            { name: 'Spins left', value: `${userData[id].spins[type]}`, inline: true },
-            { name: 'Temp results', value: userData[id].temp[type].map(x => `${rarityEmoji[x.rarity] || ''} ${x.item}`).join(', ') || 'None', inline: false }
-        )
-        .setFooter({ text: 'Click Finalize to lock your spin!' });
+        const embed = new EmbedBuilder()
+            .setTitle(`🎲 ${type.toUpperCase()} Spin Result`)
+            .setColor({ Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0xff4500, Rare: 0x1e90ff, Common: 0xaaaaaa }[result.rarity] || 0x000000)
+            .setDescription(`${rarityEmoji[result.rarity] || '❓'} **${result.item}** (${result.rarity})${isBackToBackDupe ? '\n*(Back-to-back Duplicate — spin refunded!)*' : ''}`)
+            .addFields(
+                { name: 'Spins left', value: `${userData[id].spins[type]}`, inline: true },
+                { name: 'Temp results', value: userData[id].temp[type].map(x => `${rarityEmoji[x.rarity] || ''} ${x.item}`).join(', ') || 'None', inline: false }
+            )
+            .setFooter({ text: 'Click Finalize to lock your spin!' });
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Primary)
-    );
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Primary)
+        );
 
-    msg.reply({ embeds: [embed], components: [row] });
+        await msg.reply({ embeds: [embed], components: [row] });
+    } catch (err) {
+        console.error("Error in spin command:", err);
+        msg.reply("❌ An error occurred during the spin.");
+    }
 }
 
 // ---------------- BUTTON HANDLER ----------------
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isButton()) return;
 
-    const [action, type] = interaction.customId.split('_');
-    if (action === 'finalize') {
-        const id = interaction.user.id;
-        ensureUser(id);
+    try {
+        const [action, type] = interaction.customId.split('_');
+        if (action === 'finalize') {
+            const id = interaction.user.id;
+            ensureUser(id);
 
-        const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
-        userData[id].finalized[type] = lastItem ? lastItem.item : null;
+            const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
+            userData[id].finalized[type] = lastItem ? lastItem.item : null;
 
-        userData[id].temp[type] = []; 
-        saveData();
+            userData[id].temp[type] = []; 
+            saveData();
 
-        await interaction.update({ content: `✅ You finalized your ${type}!`, embeds: [], components: [] });
+            await interaction.update({ content: `✅ You finalized your ${type}!`, embeds: [], components: [] });
+        }
+    } catch (err) {
+        console.error("Error in button interaction:", err);
     }
 });
 
-// ---------------- CHECK COMMAND ----------------
+// ---------------- COMMAND HANDLER ----------------
 client.on('messageCreate', async msg => {
     if (!msg.content.startsWith('!') || msg.author.bot) return;
-    const [cmd, ...args] = msg.content.slice(1).split(' ');
+    
+    try {
+        const [cmd, ...args] = msg.content.slice(1).split(' ');
+        const id = msg.author.id;
+        ensureUser(id);
 
-    const id = msg.author.id;
-    ensureUser(id);
+        console.log(`Command received: ${cmd} from ${msg.author.tag}`);
 
-    if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') return spinCommand(msg, cmd);
+        if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') {
+            return await spinCommand(msg, cmd);
+        }
 
-    if (cmd === 'check') {
-        try {
+        if (cmd === 'check') {
             let target = msg.mentions.users.first() || msg.author;
             ensureUser(target.id);
             const data = userData[target.id].finalized;
@@ -219,24 +234,29 @@ client.on('messageCreate', async msg => {
                     { name: 'Trait', value: String(trait), inline: true }
                 );
 
-            return msg.reply({ embeds: [embed] });
-        } catch (err) {
-            console.error("Error in !check command:", err);
-            return msg.reply("❌ An error occurred while checking specs.");
+            return await msg.reply({ embeds: [embed] });
         }
-    }
 
-    if (cmd === 'cmds') {
-        return msg.reply(`**Commands:** !clan !element1 !element2 !trait !check @User !cmds !announce [message]`);
-    }
+        if (cmd === 'cmds') {
+            return await msg.reply(`**Commands:** !clan !element1 !element2 !trait !check @User !cmds !announce [message]`);
+        }
 
-    if (cmd === 'announce') {
-        const text = args.join(' ');
-        if (!text) return msg.reply('❌ Provide a message to announce.');
-        const embed = new EmbedBuilder().setDescription(text).setColor(0xffc107);
-        return msg.reply({ embeds: [embed] });
+        if (cmd === 'announce') {
+            const text = args.join(' ');
+            if (!text) return await msg.reply('❌ Provide a message to announce.');
+            const embed = new EmbedBuilder().setDescription(text).setColor(0xffc107);
+            return await msg.reply({ embeds: [embed] });
+        }
+    } catch (err) {
+        console.error("Error in message handler:", err);
     }
 });
 
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+});
+
 // ---------------- LOGIN ----------------
-client.login(process.env.BOT_TOKEN);
+client.login(process.env.BOT_TOKEN).catch(err => {
+    console.error("Failed to login:", err);
+});

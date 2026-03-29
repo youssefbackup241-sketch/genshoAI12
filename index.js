@@ -90,7 +90,7 @@ function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, n
 function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = { 
-            spins: { clan: 15, element1: 6, element2: 6, trait: 3 }, 
+            spins: { clan: 15, element1: 5, element2: 5, trait: 3 }, 
             luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0 },
             temp: { clan: [], element1: [], element2: [], trait: [] }, 
             finalized: { clan: null, element1: null, element2: null, trait: null } 
@@ -101,9 +101,9 @@ function ensureUser(id) {
     if (!userData[id].temp) userData[id].temp = {};
     if (!userData[id].finalized) userData[id].finalized = {};
 
-    const defaults = { clan: 15, element1: 6, element2: 6, trait: 3 };
-    for (const key in defaults) {
-        if (userData[id].spins[key] === undefined) userData[id].spins[key] = defaults[key];
+    const spinDefaults = { clan: 15, element1: 5, element2: 5, trait: 3 };
+    for (const key in spinDefaults) {
+        if (userData[id].spins[key] === undefined) userData[id].spins[key] = spinDefaults[key];
         if (userData[id].luckySpins[key] === undefined) userData[id].luckySpins[key] = 0;
         if (!Array.isArray(userData[id].temp[key])) userData[id].temp[key] = [];
         if (userData[id].finalized[key] === undefined) userData[id].finalized[key] = null;
@@ -138,79 +138,74 @@ async function findUser(msg, args) {
     return null;
 }
 
-// ---------------- SPIN COMMAND ----------------
-async function spinCommand(msg, type) {
-    try {
-        const id = msg.author.id;
-        ensureUser(id);
-        
-        if (userData[id].spins[type] <= 0) {
-            const embed = new EmbedBuilder()
-                .setTitle("❌ No Spins Left")
-                .setDescription(`You have run out of **${type}** spins!`)
-                .setColor(0xff0000);
-            return msg.reply({ embeds: [embed] });
-        }
+// ---------------- SPIN LOGIC ----------------
+async function performSpin(msg, type, isLucky) {
+    const id = msg.author.id;
+    ensureUser(id);
 
-        let weights = type === 'clan' ? CLAN_RARITY_WEIGHTS : type.startsWith('element') ? ELEMENT_RARITY_WEIGHTS : DEFAULT_RARITY_WEIGHTS;
-        let pool = type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS;
-
-        // Check for Lucky Spin
-        const isLucky = userData[id].luckySpins[type] > 0;
-
-        let result;
-        let attempts = 0;
-        do {
-            result = weightedRandom(pool, weights, isLucky);
-            attempts++;
-        } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
-
-        const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
-        const isBackToBackDupe = lastResult && lastResult.item === result.item;
-
-        userData[id].temp[type].push(result);
-        if (!isBackToBackDupe) userData[id].spins[type]--;
-
-        // Consume lucky spin if used
-        if (isLucky) {
-            userData[id].luckySpins[type]--;
-        }
-
-        saveData();
-
-        const embed = new EmbedBuilder()
-            .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
-            .setAuthor({ name: msg.author.username, iconURL: msg.author.displayAvatarURL() })
-            .setColor(RARITY_COLORS[result.rarity] || 0x000000)
-            .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (2x Odds for Rare+)*' : ''}`)
-            .addFields(
-                { name: '🔋 Spins Remaining', value: `\`${userData[id].spins[type]}\``, inline: true },
-                { name: '🍀 Lucky Spins', value: `\`${userData[id].luckySpins[type]}\``, inline: true },
-                { name: '📝 Recent Results', value: userData[id].temp[type].slice(-5).map(x => `\`${x.item}\``).join(', ') || 'None', inline: false }
-            )
-            .setTimestamp()
-            .setFooter({ text: 'Click Finalize to lock this result!' });
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success)
-        );
-
-        await msg.reply({ embeds: [embed], components: [row] });
-    } catch (err) {
-        console.error("Error in spin command:", err);
-        msg.reply("❌ An error occurred during the spin.");
+    if (isLucky && userData[id].luckySpins[type] <= 0) {
+        return msg.reply(`❌ You don't have any **${type}** Lucky Spins left!`);
+    } else if (!isLucky && userData[id].spins[type] <= 0) {
+        return msg.reply(`❌ You don't have any **${type}** Normal Spins left!`);
     }
+
+    let weights = type === 'clan' ? CLAN_RARITY_WEIGHTS : type.startsWith('element') ? ELEMENT_RARITY_WEIGHTS : DEFAULT_RARITY_WEIGHTS;
+    let pool = type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS;
+
+    let result;
+    let attempts = 0;
+    do {
+        result = weightedRandom(pool, weights, isLucky);
+        attempts++;
+    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
+
+    const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
+    const isBackToBackDupe = lastResult && lastResult.item === result.item;
+
+    userData[id].temp[type].push(result);
+
+    // Consume the resource (back-to-back dupes are free)
+    if (!isBackToBackDupe) {
+        if (isLucky) userData[id].luckySpins[type]--;
+        else userData[id].spins[type]--;
+    }
+
+    saveData();
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
+        .setAuthor({ name: msg.author.username, iconURL: msg.author.displayAvatarURL() })
+        .setColor(RARITY_COLORS[result.rarity] || 0x000000)
+        .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (2x Odds for Rare+)*' : ''}`)
+        .addFields(
+            { name: '🔋 Normal Spins', value: `\`${userData[id].spins[type]}\``, inline: true },
+            { name: '🍀 Lucky Spins', value: `\`${userData[id].luckySpins[type]}\``, inline: true },
+            { name: '📝 Recent Results', value: userData[id].temp[type].slice(-5).map(x => `\`${x.item}\``).join(', ') || 'None', inline: false }
+        )
+        .setTimestamp()
+        .setFooter({ text: 'Click Finalize to lock this result!' });
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success)
+    );
+
+    await msg.reply({ embeds: [embed], components: [row] });
 }
 
 // ---------------- INTERACTION HANDLER ----------------
 client.on(Events.InteractionCreate, async interaction => {
     try {
         if (interaction.isButton()) {
-            const [action, type] = interaction.customId.split('_');
+            const [action, type, originalUserId] = interaction.customId.split('_');
+            
+            // For choice buttons, only the command user can click
+            if (originalUserId && interaction.user.id !== originalUserId) {
+                return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
+            }
+
             if (action === 'finalize') {
                 const id = interaction.user.id;
                 ensureUser(id);
-
                 const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
                 if (!lastItem) return interaction.reply({ content: "❌ Nothing to finalize!", ephemeral: true });
 
@@ -222,141 +217,120 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setTitle("✅ Finalized!")
                     .setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`)
                     .setColor(0x00ff00);
-
                 await interaction.update({ embeds: [embed], components: [] });
+            }
+
+            if (action === 'spinchoice') {
+                const isLucky = type.endsWith('lucky');
+                const realType = type.replace('lucky', '');
+                await interaction.message.delete().catch(() => {});
+                await performSpin(interaction, realType, isLucky);
             }
         }
 
         if (interaction.isStringSelectMenu()) {
             const [action, targetId, category, originalUserId] = interaction.customId.split('_');
-            
             if (originalUserId && interaction.user.id !== originalUserId) {
                 return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
             }
 
             if (action === 'givespec-category') {
                 const selectedCategory = interaction.values[0];
-                let items = [];
-                if (selectedCategory === 'clan') items = CLANS;
-                else if (selectedCategory === 'element1' || selectedCategory === 'element2') items = ELEMENTS;
-                else if (selectedCategory === 'trait') items = TRAITS;
-
+                let items = selectedCategory === 'clan' ? CLANS : (selectedCategory.startsWith('element') ? ELEMENTS : TRAITS);
                 const menu = new StringSelectMenuBuilder()
                     .setCustomId(`givespec-item_${targetId}_${selectedCategory}_${interaction.user.id}`)
                     .setPlaceholder(`Choose a ${selectedCategory} to give...`)
-                    .addOptions(items.slice(0, 25).map(i => ({
-                        label: i.item,
-                        description: `Rarity: ${i.rarity}`,
-                        value: i.item,
-                        emoji: i.emoji
-                    })));
-
-                const row = new ActionRowBuilder().addComponents(menu);
-                await interaction.update({ content: `Now select the **${selectedCategory}** you want to give:`, components: [row] });
+                    .addOptions(items.slice(0, 25).map(i => ({ label: i.item, description: `Rarity: ${i.rarity}`, value: i.item, emoji: i.emoji })));
+                await interaction.update({ content: `Now select the **${selectedCategory}** to give:`, components: [new ActionRowBuilder().addComponents(menu)] });
             }
 
             if (action === 'givespec-item') {
-                const selectedItem = interaction.values[0];
                 ensureUser(targetId);
-                userData[targetId].finalized[category] = selectedItem;
+                userData[targetId].finalized[category] = interaction.values[0];
                 saveData();
                 const targetUser = await client.users.fetch(targetId);
-                await interaction.update({ 
-                    content: `✅ Successfully gave **${selectedItem}** (${category}) to **${targetUser.username}**!`, 
-                    components: [],
-                    embeds: []
-                });
+                await interaction.update({ content: `✅ Gave **${interaction.values[0]}** to **${targetUser.username}**!`, components: [], embeds: [] });
             }
 
             if (action === 'givels-category') {
                 const selectedCategory = interaction.values[0];
                 const targetUser = await client.users.fetch(targetId);
-                
-                await interaction.update({ 
-                    content: `How many **${selectedCategory}** Lucky Spins do you want to give to **${targetUser.username}**? (Type a number in the chat)`, 
-                    components: [] 
-                });
-
+                await interaction.update({ content: `How many **${selectedCategory}** Lucky Spins to give to **${targetUser.username}**?`, components: [] });
                 const filter = m => m.author.id === originalUserId && !isNaN(m.content);
                 const collector = interaction.channel.createMessageCollector({ filter, time: 15000, max: 1 });
-
                 collector.on('collect', async m => {
                     const amount = parseInt(m.content);
                     ensureUser(targetId);
-
-                    if (selectedCategory === 'all') {
-                        userData[targetId].luckySpins.clan += amount;
-                        userData[targetId].luckySpins.element1 += amount;
-                        userData[targetId].luckySpins.element2 += amount;
-                        userData[targetId].luckySpins.trait += amount;
-                    } else {
-                        userData[targetId].luckySpins[selectedCategory] += amount;
-                    }
-                    
+                    if (selectedCategory === 'all') ['clan', 'element1', 'element2', 'trait'].forEach(k => userData[targetId].luckySpins[k] += amount);
+                    else userData[targetId].luckySpins[selectedCategory] += amount;
                     saveData();
-                    await m.reply(`✅ Successfully gave **${amount}** Lucky Spins (${selectedCategory}) to **${targetUser.username}**!`);
+                    await m.reply(`✅ Gave **${amount}** Lucky Spins to **${targetUser.username}**!`);
                 });
             }
         }
-    } catch (err) {
-        console.error("Error in interaction:", err);
-    }
+    } catch (err) { console.error("Error in interaction:", err); }
 });
 
 // ---------------- COMMAND HANDLER ----------------
 client.on('messageCreate', async msg => {
     if (!msg.content.startsWith('!') || msg.author.bot) return;
-    
     try {
         const [cmd, ...args] = msg.content.slice(1).split(' ');
         const id = msg.author.id;
         ensureUser(id);
 
         if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') {
-            return await spinCommand(msg, cmd);
+            const embed = new EmbedBuilder()
+                .setTitle(`🎰 ${cmd.toUpperCase()} SPIN`)
+                .setDescription(`Choose which type of spin you want to use for **${cmd}**:`)
+                .setColor(0x7289da)
+                .addFields(
+                    { name: '🔋 Normal', value: `\`${userData[id].spins[cmd]}\` remaining`, inline: true },
+                    { name: '🍀 Lucky', value: `\`${userData[id].luckySpins[cmd]}\` remaining`, inline: true }
+                );
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`spinchoice_${cmd}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(`spinchoice_${cmd}lucky_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Secondary)
+            );
+            return await msg.reply({ embeds: [embed], components: [row] });
+        }
+
+        if (cmd === 'resetspins') {
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Mention a user or ID.");
+            ensureUser(target.id);
+            userData[target.id].spins = { clan: 15, element1: 5, element2: 5, trait: 3 };
+            saveData();
+            return await msg.reply(`✅ Reset spins for **${target.username}** to defaults.`);
+        }
+
+        if (cmd === 'wipe') {
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Mention a user or ID.");
+            ensureUser(target.id);
+            userData[target.id].finalized = { clan: null, element1: null, element2: null, trait: null };
+            saveData();
+            return await msg.reply(`✅ Wiped specs for **${target.username}**.`);
         }
 
         if (cmd === 'givespec') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Only Staff can use this command!");
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
             const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Provide a valid @User or ID.");
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`givespec-category_${target.id}_none_${msg.author.id}`)
-                .setPlaceholder('Choose a category...')
-                .addOptions([
-                    { label: 'Clan', value: 'clan', emoji: '⛩️' },
-                    { label: 'Element 1', value: 'element1', emoji: '🔥' },
-                    { label: 'Element 2', value: 'element2', emoji: '🌊' },
-                    { label: 'Trait', value: 'trait', emoji: '✨' }
-                ]);
+            if (!target) return msg.reply("❌ Mention a user or ID.");
+            const menu = new StringSelectMenuBuilder().setCustomId(`givespec-category_${target.id}_none_${msg.author.id}`).setPlaceholder('Choose a category...')
+                .addOptions([{ label: 'Clan', value: 'clan', emoji: '⛩️' }, { label: 'Element 1', value: 'element1', emoji: '🔥' }, { label: 'Element 2', value: 'element2', emoji: '🌊' }, { label: 'Trait', value: 'trait', emoji: '✨' }]);
             return await msg.reply({ content: `Giving spec to **${target.username}**:`, components: [new ActionRowBuilder().addComponents(menu)] });
         }
 
         if (cmd === 'givels') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Only Staff can use this command!");
+            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
             const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Provide a valid @User or ID.");
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`givels-category_${target.id}_none_${msg.author.id}`)
-                .setPlaceholder('Choose category for Lucky Spins...')
-                .addOptions([
-                    { label: 'Clan', value: 'clan', emoji: '⛩️' },
-                    { label: 'Element 1', value: 'element1', emoji: '🔥' },
-                    { label: 'Element 2', value: 'element2', emoji: '🌊' },
-                    { label: 'Trait', value: 'trait', emoji: '✨' },
-                    { label: 'All Categories', value: 'all', emoji: '🌟' }
-                ]);
+            if (!target) return msg.reply("❌ Mention a user or ID.");
+            const menu = new StringSelectMenuBuilder().setCustomId(`givels-category_${target.id}_none_${msg.author.id}`).setPlaceholder('Choose category for Lucky Spins...')
+                .addOptions([{ label: 'Clan', value: 'clan', emoji: '⛩️' }, { label: 'Element 1', value: 'element1', emoji: '🔥' }, { label: 'Element 2', value: 'element2', emoji: '🌊' }, { label: 'Trait', value: 'trait', emoji: '✨' }, { label: 'All Categories', value: 'all', emoji: '🌟' }]);
             return await msg.reply({ content: `Giving Lucky Spins to **${target.username}**:`, components: [new ActionRowBuilder().addComponents(menu)] });
-        }
-
-        if (cmd === 'wipe') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Only Staff can use this command!");
-            const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Provide a valid @User or ID.");
-            ensureUser(target.id);
-            userData[target.id].finalized = { clan: null, element1: null, element2: null, trait: null };
-            saveData();
-            return await msg.reply(`✅ Successfully wiped specs for **${target.username}**.`);
         }
 
         if (cmd === 'check') {
@@ -364,32 +338,15 @@ client.on('messageCreate', async msg => {
             ensureUser(target.id);
             const data = userData[target.id].finalized;
             const ls = userData[target.id].luckySpins;
-            
-            const embed = new EmbedBuilder()
-                .setTitle(`📜 ${target.username.toUpperCase()}'S SPECS`)
-                .setThumbnail(target.displayAvatarURL())
-                .setColor(0x2f3136)
-                .addFields(
-                    { name: '⛩️ Clan', value: `\`${data.clan || 'None'}\` (🍀 ${ls.clan})`, inline: true },
-                    { name: '✨ Trait', value: `\`${data.trait || 'None'}\` (🍀 ${ls.trait})`, inline: true },
-                    { name: '\u200B', value: '\u200B', inline: false },
-                    { name: '🔥 Element 1', value: `\`${data.element1 || 'None'}\` (🍀 ${ls.element1})`, inline: true },
-                    { name: '🌊 Element 2', value: `\`${data.element2 || 'None'}\` (🍀 ${ls.element2})`, inline: true }
-                )
-                .setFooter({ text: "Use !clan, !element1, !element2, or !trait to spin!" })
-                .setTimestamp();
+            const embed = new EmbedBuilder().setTitle(`📜 ${target.username.toUpperCase()}'S SPECS`).setThumbnail(target.displayAvatarURL()).setColor(0x2f3136)
+                .addFields({ name: '⛩️ Clan', value: `\`${data.clan || 'None'}\` (🍀 ${ls.clan})`, inline: true }, { name: '✨ Trait', value: `\`${data.trait || 'None'}\` (🍀 ${ls.trait})`, inline: true }, { name: '\u200B', value: '\u200B', inline: false },
+                    { name: '🔥 Element 1', value: `\`${data.element1 || 'None'}\` (🍀 ${ls.element1})`, inline: true }, { name: '🌊 Element 2', value: `\`${data.element2 || 'None'}\` (🍀 ${ls.element2})`, inline: true })
+                .setFooter({ text: "Use !clan, !element1, !element2, or !trait to spin!" }).setTimestamp();
             return await msg.reply({ embeds: [embed] });
         }
 
         if (cmd === 'cmds') {
-            const embed = new EmbedBuilder()
-                .setTitle("🎮 BOT COMMANDS")
-                .setColor(0x7289da)
-                .addFields(
-                    { name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false },
-                    { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false },
-                    { name: '🎁 Staff', value: "`!givespec @User`, `!givels @User`, `!wipe @User`, `!announce [msg]`", inline: false }
-                );
+            const embed = new EmbedBuilder().setTitle("🎮 BOT COMMANDS").setColor(0x7289da).addFields({ name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false }, { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false }, { name: '🎁 Staff', value: "`!givespec @User`, `!givels @User`, `!wipe @User`, `!resetspins @User`, `!announce [msg]`", inline: false });
             return await msg.reply({ embeds: [embed] });
         }
 
@@ -399,9 +356,7 @@ client.on('messageCreate', async msg => {
             try { await msg.delete(); } catch (e) {}
             return await msg.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(0xffc107)] });
         }
-    } catch (err) {
-        console.error("Error in message handler:", err);
-    }
+    } catch (err) { console.error("Error in message handler:", err); }
 });
 
 client.once('ready', () => { console.log(`Logged in as ${client.user.tag}!`); });

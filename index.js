@@ -1,13 +1,13 @@
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
-const client = new Client({ 
+
+const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-const databaseFile = './database.json';
-let db = {};
-if(fs.existsSync(databaseFile)) db = JSON.parse(fs.readFileSync(databaseFile));
+const dbFile = './database.json';
+let db = fs.existsSync(dbFile) ? JSON.parse(fs.readFileSync(dbFile)) : {};
 
 // ----- DATA -----
 const clans = {
@@ -25,13 +25,11 @@ const elements = {
 };
 
 const traits = {
-    Mythical: [],
     Legendary: ["Analytical Eye","Jutsu Amplification","Kekkei Genkai Proficiency"],
     Epic: ["Elemental Affinity Mastery","Illusion/Genjutsu Potency","Iryojutsu Proficiency"],
     Rare: ["Fuinjutsu Technique Expertise","Scientist","Superhuman Physique"]
 };
 
-// Emojis for rarity
 const rarityEmojis = {
     Mythical: "💎",
     Legendary: "🌟",
@@ -40,15 +38,13 @@ const rarityEmojis = {
     Common: "⚪"
 };
 
-// Spin limits
 const maxSpins = { element: 10, clan: 10, trait: 5 };
 const maxFinal = { element: 2, clan: 1, trait: 1 };
 
 // ----- HELPERS -----
-function saveDB() { fs.writeFileSync(databaseFile, JSON.stringify(db, null, 2)); }
+function saveDB() { fs.writeFileSync(dbFile, JSON.stringify(db, null, 2)); }
 
-// Weighted rarity pick
-function pickRarityWeighted(obj) {
+function pickRarityWeighted(obj){
     const roll = Math.random()*100;
     let rarity;
     if(roll<1) rarity="Mythical";
@@ -56,9 +52,10 @@ function pickRarityWeighted(obj) {
     else if(roll<21) rarity="Epic";
     else if(roll<50) rarity="Rare";
     else rarity="Common";
-    const pool = obj[rarity];
+
+    const pool = obj[rarity] || [];
     const picked = pool[Math.floor(Math.random()*pool.length)];
-    return {name:picked, rarity};
+    return { name: picked, rarity };
 }
 
 // ----- COMMANDS -----
@@ -67,8 +64,8 @@ client.on('messageCreate', async msg=>{
     const args = msg.content.trim().split(/ +/g);
     const cmd = args.shift().toLowerCase();
 
-    // Spin commands
-    if(cmd === "!element" || cmd === "!clan" || cmd === "!trait"){
+    // Spin
+    if(["!element","!clan","!trait"].includes(cmd)){
         const type = cmd.slice(1);
         if(!db[msg.author.id]) db[msg.author.id] = { spins: { element: [], clan: [], trait: [] }, finalized: { element: [], clan: null, trait: null }};
         if(db[msg.author.id].spins[type].length >= maxSpins[type]) return msg.reply(`You used all your ${type} spins!`);
@@ -80,10 +77,9 @@ client.on('messageCreate', async msg=>{
 
         const embed = new EmbedBuilder()
             .setTitle(`${type.toUpperCase()} SPIN`)
-            .setDescription(`${rarityEmojis[picked.rarity]} **${picked.name}** (${picked.rarity})`)
-            .setColor(0x00FF00)
-            .setFooter({text:"Click ✅ to finalize this spin"});
-        
+            .setDescription(`${rarityEmojis[picked.rarity]} **${picked.name}** (${picked.rarity})\nClick ✅ to finalize`)
+            .setColor(0x00FF00);
+
         const msgEmbed = await msg.channel.send({embeds:[embed]});
         await msgEmbed.react('✅');
 
@@ -98,18 +94,18 @@ client.on('messageCreate', async msg=>{
         });
     }
 
-    // !check
+    // Check
     if(cmd==="!check"){
-        let user = msg.mentions.users.first()||msg.author;
-        if(!db[user.id]||!db[user.id].finalized) return msg.reply("No finalized data for this user!");
-        const data = db[user.id].finalized;
+        const user = msg.mentions.users.first()||msg.author;
+        if(!db[user.id]||!db[user.id].finalized) return msg.reply("No finalized data!");
+        const f = db[user.id].finalized;
         const embed = new EmbedBuilder()
-            .setDescription(`**Clan:** ${data.clan||'None'}\n**Elements:** ${data.element.join(', ')||'None'}\n**Trait:** ${data.trait||'None'}`)
+            .setDescription(`**Clan:** ${f.clan||'None'}\n**Elements:** ${f.element.join(', ')||'None'}\n**Trait:** ${f.trait||'None'}`)
             .setColor(0xFFD700);
         msg.channel.send({embeds:[embed]});
     }
 
-    // !announce
+    // Announcement
     if(cmd==="!announce"){
         const text = args.join(" ");
         if(!text) return msg.reply("Message required!");
@@ -119,68 +115,13 @@ client.on('messageCreate', async msg=>{
         msg.channel.send({embeds:[embed]});
     }
 
-    // STAFF commands (!setspec, !addspin, !wipe, !cmds)
-    if(["!setspec","!addspin","!wipe","!cmds"].includes(cmd)){
-        if(!msg.member.permissions.has("ManageGuild")) return msg.reply("Staff only");
-        
-        if(cmd==="!cmds"){
-            msg.channel.send(`Staff commands: !setspec, !addspin, !wipe, !cmds, !announce`);
-        }
-        if(cmd==="!wipe"){
-            const user = msg.mentions.users.first();
-            if(!user) return msg.reply("Mention user");
-            db[user.id]={spins:{element:[],clan:[],trait:[]},finalized:{element:[],clan:null,trait:null}};
-            saveDB();
-            msg.reply(`Cleared ${user.username}'s data`);
-        }
-        if(cmd==="!addspin"){
-            const user = msg.mentions.users.first();
-            if(!user) return msg.reply("Mention user");
-            const type = args[1];
-            const count = parseInt(args[2]);
-            if(!["element","clan","trait"].includes(type)) return msg.reply("Invalid type");
-            if(!db[user.id]) db[user.id]={spins:{element:[],clan:[],trait:[]},finalized:{element:[],clan:null,trait:null}};
-            for(let i=0;i<count;i++){
-                const pool = type==="element"?elements:type==="clan"?clans:traits;
-                db[user.id].spins[type].push(pickRarityWeighted(pool));
-            }
-            saveDB();
-            msg.reply(`Added ${count} ${type} spins to ${user.username}`);
-        }
-
-        // Fully working !setspec
-        if(cmd==="!setspec"){
-            const filterStaff = m=>m.author.id===msg.author.id;
-            msg.channel.send("Who is the user? Mention them").then(async()=>{
-                const collectedUser = await msg.channel.awaitMessages({filter:filterStaff,max:1,time:30000});
-                if(!collectedUser.size) return msg.reply("No user selected");
-                const user = collectedUser.first().mentions.users.first();
-                if(!user) return msg.reply("Invalid user");
-
-                msg.channel.send("Which category? (clan / element / trait)").then(async()=>{
-                    const collectedCat = await msg.channel.awaitMessages({filter:filterStaff,max:1,time:30000});
-                    if(!collectedCat.size) return msg.reply("No category selected");
-                    const cat = collectedCat.first().content.toLowerCase();
-                    let optionsList;
-                    if(cat==="clan") optionsList = Object.values(clans).flat();
-                    else if(cat==="element") optionsList = Object.values(elements).flat();
-                    else if(cat==="trait") optionsList = Object.values(traits).flat();
-                    else return msg.reply("Invalid category");
-
-                    const embed = new EmbedBuilder().setTitle(`Choose ${cat}`).setDescription(optionsList.map((o,i)=>`${i+1}. ${o}`).join("\n"));
-                    await msg.channel.send({embeds:[embed]});
-                    const collectedOpt = await msg.channel.awaitMessages({filter:filterStaff,max:1,time:30000});
-                    if(!collectedOpt.size) return msg.reply("No option selected");
-                    const choice = optionsList[parseInt(collectedOpt.first().content)-1];
-                    if(!db[user.id]) db[user.id]={spins:{element:[],clan:[],trait:[]},finalized:{element:[],clan:null,trait:null}};
-                    if(cat==="element"){
-                        if(db[user.id].finalized.element.length<maxFinal.element) db[user.id].finalized.element.push(choice);
-                    } else db[user.id].finalized[cat]=choice;
-                    saveDB();
-                    msg.channel.send(`Set ${user.username}'s ${cat} to ${choice}`);
-                });
-            });
-        }
+    // Cmds
+    if(cmd==="!cmds"){
+        const embed = new EmbedBuilder()
+            .setTitle("Commands")
+            .setDescription("!element, !clan, !trait, !check, !announce, !cmds")
+            .setColor(0xAAAAAA);
+        msg.channel.send({embeds:[embed]});
     }
 });
 

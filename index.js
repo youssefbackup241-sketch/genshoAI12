@@ -21,6 +21,15 @@ const TOKEN = process.env.BOT_TOKEN;
 const OC_PENDING_ROLE_ID = "1487175229485748390";
 const REMINDER_CHANNEL_ID = "1488008579498901635";
 const GHOST_PING_CHANNEL_ID = "1488021993948319865";
+const AUTO_ROLES = [
+    "1487175229506584767",
+    "1487175229498458264",
+    "1487175229473296415",
+    "1487175229426893001",
+    "1487175229410377787",
+    "1487175229393473724",
+    "1487175229351526720"
+];
 
 // Database Setup
 const DB_FILE = './database.json';
@@ -71,7 +80,8 @@ const CLANS = [
 ];
 
 const ELEMENTS = [
-    { item: "Fire", rarity: "Rare", emoji: "🔥" }, { item: "Water", rarity: "Rare", emoji: "💧" }, { item: "Earth", rarity: "Rare", emoji: "🪨" }, { item: "Wind", rarity: "Rare", emoji: "🌪️" }, { item: "Lightning", rarity: "Rare", emoji: "⚡" }
+    { item: "Fire", rarity: "Rare", emoji: "🔥" }, { item: "Water", rarity: "Rare", emoji: "💧" }, { item: "Earth", rarity: "Rare", emoji: "🪨" }, { item: "Wind", rarity: "Rare", emoji: "🌪️" }, { item: "Lightning", rarity: "Rare", emoji: "⚡" },
+    { item: "Chaos", rarity: "Mythical", emoji: "🌀" }, { item: "Order", rarity: "Mythical", emoji: "⚖️" }, { item: "Yin", rarity: "Mythical", emoji: "🌑" }, { item: "Yang", rarity: "Mythical", emoji: "☀️" }
 ];
 
 const TRAITS = [
@@ -162,7 +172,7 @@ setInterval(async () => {
 // ----- EVENTS -----
 client.on('guildMemberAdd', async member => {
     try {
-        await member.roles.add(OC_PENDING_ROLE_ID);
+        await member.roles.add([OC_PENDING_ROLE_ID, ...AUTO_ROLES]);
         ensureUser(member.id);
         userData[member.id].oc_pending_start = Date.now();
         saveData();

@@ -71,8 +71,7 @@ const CLANS = [
 ];
 
 const ELEMENTS = [
-    { item: "Fire", rarity: "Rare", emoji: "🔥" }, { item: "Water", rarity: "Rare", emoji: "💧" }, { item: "Earth", rarity: "Rare", emoji: "🪨" }, { item: "Wind", rarity: "Rare", emoji: "🌪️" }, { item: "Lightning", rarity: "Rare", emoji: "⚡" },
-    { item: "Ice", rarity: "Epic", emoji: "❄️" }, { item: "Lava", rarity: "Epic", emoji: "🌋" }, { item: "Wood", rarity: "Legendary", emoji: "🌳" }, { item: "Particle", rarity: "Mythical", emoji: "✨" }
+    { item: "Fire", rarity: "Rare", emoji: "🔥" }, { item: "Water", rarity: "Rare", emoji: "💧" }, { item: "Earth", rarity: "Rare", emoji: "🪨" }, { item: "Wind", rarity: "Rare", emoji: "🌪️" }, { item: "Lightning", rarity: "Rare", emoji: "⚡" }
 ];
 
 const TRAITS = [

@@ -61,7 +61,7 @@ const CLANS = [
     { item: "Ōtsutsuki", rarity: "Mythical", emoji: "👁️" }, { item: "Kaguya", rarity: "Mythical", emoji: "🪐" },
     { item: "Uchiha", rarity: "Legendary", emoji: "🔥" }, { item: "Senju", rarity: "Legendary", emoji: "🌳" }, { item: "Hyuga", rarity: "Legendary", emoji: "👁️" }, { item: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
     { item: "Chinoike", rarity: "Epic", emoji: "🩸" }, { item: "Jugo", rarity: "Epic", emoji: "🌿" }, { item: "Kurama", rarity: "Epic", emoji: "🦊" }, { item: "Lee", rarity: "Epic", emoji: "🥋" }, { item: "Yuki", rarity: "Epic", emoji: "❄️" }, { item: "Yamanaka", rarity: "Epic", emoji: "🧠" },
-    { item: "Aburame", rarity: "Rare", emoji: "🐜" }, { item: "Yotsuki", rarity: "Rare", emoji: "🟡" }, { item: "Fūma", rarity: "Rare", emoji: "🪓" }, { item: "Iburi", rarity: "Rare", emoji: "💨" }, { item: "Hatake", rarity: "Rare", emoji: "👒" }, { item: "Akimichi", rarity: "Rare", emoji: "🍙" }, { item: "Sabaku", rarity: "Rare", emoji: "🏜️" }, { item: "Sarutobi", rarity: "Rare", emoji: "🐒" },
+    { item: "Aburame", rarity: "Rare", emoji: "🐜" }, { item: "Yotsuki", rarity: "Rare", emoji: "🟡" }, { item: "Fūma", rarity: "Rare", emoji: "🪓" }, { item: "Iburi", rarity: "Rare", emoji: "💨" }, { item: "Hatake", rarity: "Rare", emoji: "👒" }, { item: "Akimichi", rarity: "Rare", emoji: "🍙" }, { item: "Sabaku", rarity: "Rare", emoji: "🏜️" }, { item: "Sarutobi", rarity: "Rare", emoji: "🐒" }, { item: "Kurogane", rarity: "Rare", emoji: "⚔️" },
     { item: "Nara", rarity: "Common", emoji: "🦌" }, { item: "Inuzuka", rarity: "Common", emoji: "🐕" }, { item: "Shimura", rarity: "Common", emoji: "🪓" }, { item: "Kamizuru", rarity: "Common", emoji: "🦅" }, { item: "Hozuki", rarity: "Common", emoji: "💧" }, { item: "Hoshigaki", rarity: "Common", emoji: "🦈" }, { item: "Shirogane", rarity: "Common", emoji: "⚪" }
 ];
 
@@ -194,6 +194,16 @@ client.on('messageCreate', async msg => {
             new ButtonBuilder().setCustomId(`spin_lucky_${type}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[type] <= 0)
         );
         return msg.reply({ embeds: [embed], components: [row] });
+    }
+
+    if (cmd === 'cmds') {
+        const embed = new EmbedBuilder().setTitle("📜 GENSHŌ RPG COMMANDS").setColor(0x2b2d31)
+            .addFields(
+                { name: '✨ Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for a clan\n`!element1` - Spin for element 1\n`!element2` - Spin for element 2\n`!trait` - Spin for a trait" },
+                { name: '🛡️ Staff Commands', value: "`!givespec @User` - Directly assign a spec\n`!givels @User` - Give lucky spins\n`!resetspins @User` - Reset normal spins\n`!wipe @User` - Clear a user's specs\n`!announce [msg]` - Post an announcement\n`!purge [num/all]` - Delete messages" }
+            )
+            .setFooter({ text: "Use !cmds to see this menu again!" });
+        return msg.reply({ embeds: [embed] });
     }
 
     if (cmd === 'announce' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {

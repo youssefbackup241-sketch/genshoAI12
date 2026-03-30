@@ -1,6 +1,8 @@
-// index.js
+// index.js - Main Genshō RPG Bot
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events, StringSelectMenuBuilder, PermissionsBitField, Collection } = require('discord.js');
 const fs = require('fs');
+
+// Initialize Discord Client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds, 
@@ -11,472 +13,299 @@ const client = new Client({
     ],
     partials: [Partials.Channel, Partials.GuildMember, Partials.User]
 });
-require('dotenv').config();
 
-const DATABASE_FILE = './database.json';
+// Railway Environment Variable
+const TOKEN = process.env.BOT_TOKEN;
+
+// IDs
+const OC_PENDING_ROLE_ID = "1487175229485748390";
+const REMINDER_CHANNEL_ID = "1488008579498901635";
+
+// Database Setup
+const DB_FILE = './database.json';
 let userData = {};
-if (fs.existsSync(DATABASE_FILE)) {
-    try {
-        const fileContent = fs.readFileSync(DATABASE_FILE, 'utf8');
-        userData = fileContent ? JSON.parse(fileContent) : {};
-    } catch (e) {
-        console.error("Failed to parse database.json, starting fresh.", e);
-        userData = {};
+
+function loadData() {
+    if (fs.existsSync(DB_FILE)) {
+        try {
+            const content = fs.readFileSync(DB_FILE, 'utf8');
+            if (content) userData = JSON.parse(content);
+        } catch (e) { console.error("⚠️ Database load error:", e.message); }
     }
 }
+loadData();
 
-// ----- CONFIG -----
-const OC_PENDING_ROLE_ID = "1487175229485748390";
-const KICK_TIMEOUT_DAYS = 3; 
-
-const CLANS = [
-    // Mythical
-    { item: "Ōtsutsuki", rarity: "Mythical", emoji: "👁️" },
-    { item: "Kaguya", rarity: "Mythical", emoji: "🪐" },
-    // Legendary
-    { item: "Uchiha", rarity: "Legendary", emoji: "🔥" },
-    { item: "Senju", rarity: "Legendary", emoji: "🌳" },
-    { item: "Hyuga", rarity: "Legendary", emoji: "👁️" },
-    { item: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
-    // Epic
-    { item: "Chinoike", rarity: "Epic", emoji: "🩸" },
-    { item: "Jugo", rarity: "Epic", emoji: "🌿" },
-    { item: "Kurama", rarity: "Epic", emoji: "🦊" },
-    { item: "Lee", rarity: "Epic", emoji: "🥋" },
-    { item: "Yuki", rarity: "Epic", emoji: "❄️" },
-    { item: "Yamanaka", rarity: "Epic", emoji: "🧠" },
-    // Rare
-    { item: "Aburame", rarity: "Rare", emoji: "🐜" },
-    { item: "Yotsuki", rarity: "Rare", emoji: "🟡" },
-    { item: "Fūma", rarity: "Rare", emoji: "🪓" },
-    { item: "Iburi", rarity: "Rare", emoji: "💨" },
-    { item: "Hatake", rarity: "Rare", emoji: "👒" },
-    { item: "Akimichi", rarity: "Rare", emoji: "🍙" },
-    { item: "Sabaku", rarity: "Rare", emoji: "🏜️" },
-    { item: "Sarutobi", rarity: "Rare", emoji: "🐒" },
-    // Common
-    { item: "Nara", rarity: "Common", emoji: "🦌" },
-    { item: "Inuzuka", rarity: "Common", emoji: "🐕" },
-    { item: "Shimura", rarity: "Common", emoji: "🪓" },
-    { item: "Kamizuru", rarity: "Common", emoji: "🦅" },
-    { item: "Hozuki", rarity: "Common", emoji: "💧" },
-    { item: "Hoshigaki", rarity: "Common", emoji: "🦈" },
-    { item: "Shirogane", rarity: "Common", emoji: "⚪" }
-];
-
-const ELEMENTS = [
-    { item: "Fire", rarity: "Rare", emoji: "🔥" },
-    { item: "Water", rarity: "Rare", emoji: "💧" },
-    { item: "Earth", rarity: "Rare", emoji: "🌍" },
-    { item: "Wind", rarity: "Rare", emoji: "🌪️" },
-    { item: "Lightning", rarity: "Rare", emoji: "⚡" },
-    { item: "Wood", rarity: "Legendary", emoji: "🌳" },
-    { item: "Yin", rarity: "Mythical", emoji: "🌑" },
-    { item: "Yang", rarity: "Mythical", emoji: "🌕" },
-    { item: "Chaos", rarity: "Mythical", emoji: "🌀" },
-    { item: "Order", rarity: "Mythical", emoji: "⚖️" }
-];
-
-const TRAITS = [
-    { item: "Analytical Eye", rarity: "Legendary", emoji: "👁️" },
-    { item: "Jutsu Amplification", rarity: "Legendary", emoji: "💥" },
-    { item: "Elemental Affinity Mastery", rarity: "Epic", emoji: "🪄" },
-    { item: "Illusion/Genjutsu Potency", rarity: "Epic", emoji: "🌫️" },
-    { item: "Kekkei Genkai Proficiency", rarity: "Legendary", emoji: "🧬" },
-    { item: "Fuinjutsu Technique Expertise", rarity: "Rare", emoji: "📜" },
-    { item: "Iryojutsu Proficiency", rarity: "Epic", emoji: "💉" },
-    { item: "Scientist", rarity: "Rare", emoji: "🧪" },
-    { item: "Superhuman Physique", rarity: "Rare", emoji: "💪" }
-];
-
-// UI & THEME CONFIG
-const RARITY_COLORS = { Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0x9400d3, Rare: 0x1e90ff, Common: 0x808080 };
-const RARITY_EMOJI = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
-
-// RARITY WEIGHTS
-const CLAN_RARITY_WEIGHTS = { Mythical: 1, Legendary: 8, Epic: 35, Rare: 65, Common: 35 };
-const ELEMENT_RARITY_WEIGHTS = { Mythical: 0.1, Legendary: 5, Epic: 15, Rare: 75, Common: 35 };
-const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, Common: 49 };
-
-// ----- AUTO-MOD CONFIG -----
-const BANNED_WORDS = ['nigga', 'nigger', 'nigg', 'nig ga', 'faggot', 'fag', 'retard'];
-const ANTI_SPAM_LIMIT = 5; 
-const ANTI_SPAM_TIME = 3000; 
-const MASS_MENTION_LIMIT = 5; 
-const messageLog = new Collection(); 
-
-// ---------------- UTILS ----------------
-function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
+function saveData() { 
+    try { fs.writeFileSync(DB_FILE, JSON.stringify(userData, null, 2)); } 
+    catch (e) { console.error("⚠️ Database save error:", e.message); }
+}
 
 function ensureUser(id) {
     if (!userData[id]) {
-        userData[id] = { 
-            spins: { clan: 15, element1: 5, element2: 5, trait: 3 }, 
+        userData[id] = {
+            spins: { clan: 15, element1: 5, element2: 5, trait: 3 },
             luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0 },
-            temp: { clan: [], element1: [], element2: [], trait: [] }, 
-            finalized: { clan: null, element1: null, element2: null, trait: null },
-            oc_pending_start: null 
+            temp: { clan: [], element1: [], element2: [], trait: [] },
+            finalized: { clan: 'None', element1: 'None', element2: 'None', trait: 'None' },
+            oc_pending_start: null
         };
     }
-    if (!userData[id].spins) userData[id].spins = {};
-    if (!userData[id].luckySpins) userData[id].luckySpins = {};
-    if (!userData[id].temp) userData[id].temp = {};
-    if (!userData[id].finalized) userData[id].finalized = {};
-
-    const spinDefaults = { clan: 15, element1: 5, element2: 5, trait: 3 };
-    for (const key in spinDefaults) {
-        if (userData[id].spins[key] === undefined) userData[id].spins[key] = spinDefaults[key];
-        if (userData[id].luckySpins[key] === undefined) userData[id].luckySpins[key] = 0;
-        if (!Array.isArray(userData[id].temp[key])) userData[id].temp[key] = [];
-        if (userData[id].finalized[key] === undefined) userData[id].finalized[key] = null;
-    }
+    if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 5, element2: 5, trait: 3 };
+    if (!userData[id].luckySpins) userData[id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0 };
+    if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [] };
+    if (!userData[id].finalized) userData[id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None' };
 }
 
-function weightedRandom(arr, weights, isLucky) {
-    const pool = [];
-    for (let obj of arr) {
-        if (isLucky && (obj.rarity === 'Common' || obj.rarity === 'Rare')) continue;
-        let weight = weights[obj.rarity] || 1;
-        if (isLucky && ['Epic', 'Legendary', 'Mythical'].includes(obj.rarity)) weight *= 5;
-        const count = Math.max(1, Math.round(weight * 10));
-        for (let i = 0; i < count; i++) pool.push(obj);
+// ----- CONFIGURATION -----
+const CLANS = [
+    { item: "Ōtsutsuki", rarity: "Mythical", emoji: "👁️" }, { item: "Kaguya", rarity: "Mythical", emoji: "🪐" },
+    { item: "Uchiha", rarity: "Legendary", emoji: "🔥" }, { item: "Senju", rarity: "Legendary", emoji: "🌳" }, { item: "Hyuga", rarity: "Legendary", emoji: "👁️" }, { item: "Uzumaki", rarity: "Legendary", emoji: "🌀" },
+    { item: "Chinoike", rarity: "Epic", emoji: "🩸" }, { item: "Jugo", rarity: "Epic", emoji: "🌿" }, { item: "Kurama", rarity: "Epic", emoji: "🦊" }, { item: "Lee", rarity: "Epic", emoji: "🥋" }, { item: "Yuki", rarity: "Epic", emoji: "❄️" }, { item: "Yamanaka", rarity: "Epic", emoji: "🧠" },
+    { item: "Aburame", rarity: "Rare", emoji: "🐜" }, { item: "Yotsuki", rarity: "Rare", emoji: "🟡" }, { item: "Fūma", rarity: "Rare", emoji: "🪓" }, { item: "Iburi", rarity: "Rare", emoji: "💨" }, { item: "Hatake", rarity: "Rare", emoji: "👒" }, { item: "Akimichi", rarity: "Rare", emoji: "🍙" }, { item: "Sabaku", rarity: "Rare", emoji: "🏜️" }, { item: "Sarutobi", rarity: "Rare", emoji: "🐒" },
+    { item: "Nara", rarity: "Common", emoji: "🦌" }, { item: "Inuzuka", rarity: "Common", emoji: "🐕" }, { item: "Shimura", rarity: "Common", emoji: "🪓" }, { item: "Kamizuru", rarity: "Common", emoji: "🦅" }, { item: "Hozuki", rarity: "Common", emoji: "💧" }, { item: "Hoshigaki", rarity: "Common", emoji: "🦈" }, { item: "Shirogane", rarity: "Common", emoji: "⚪" }
+];
+
+const ELEMENTS = [
+    { item: "Fire", rarity: "Rare", emoji: "🔥" }, { item: "Water", rarity: "Rare", emoji: "💧" }, { item: "Earth", rarity: "Rare", emoji: "🪨" }, { item: "Wind", rarity: "Rare", emoji: "🌪️" }, { item: "Lightning", rarity: "Rare", emoji: "⚡" },
+    { item: "Ice", rarity: "Epic", emoji: "❄️" }, { item: "Lava", rarity: "Epic", emoji: "🌋" }, { item: "Wood", rarity: "Legendary", emoji: "🌳" }, { item: "Particle", rarity: "Mythical", emoji: "✨" }
+];
+
+const TRAITS = [
+    { item: "Strong Body", rarity: "Rare", emoji: "💪" }, { item: "Fast Reflexes", rarity: "Rare", emoji: "⚡" }, { item: "High Intellect", rarity: "Epic", emoji: "🧠" }, { item: "Sage Mode", rarity: "Legendary", emoji: "🐸" }, { item: "Six Paths Power", rarity: "Mythical", emoji: "🌞" }
+];
+
+const RARITY_COLORS = { Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0x9400d3, Rare: 0x1e90ff, Common: 0x808080 };
+const RARITY_EMOJI = { Mythical: "💎", Legendary: "🏆", Epic: "✨", Rare: "🔹", Common: "⚪" };
+
+const BANNED_WORDS = ["nigga", "nigger", "nigg", "nig ga", "faggot", "fag", "retard"];
+const messageLog = new Collection();
+
+// Helper: Weighted Random
+function weightedRandom(items, isLucky = false) {
+    const weights = { Common: 70, Rare: 25, Epic: 4, Legendary: 0.9, Mythical: 0.1 };
+    let pool = items;
+    if (isLucky) {
+        pool = items.filter(i => i.rarity !== 'Common' && i.rarity !== 'Rare');
+        weights.Epic = 4; weights.Legendary = 4.5; weights.Mythical = 0.5; // 5x boost
     }
-    if (pool.length === 0) return arr[Math.floor(Math.random() * arr.length)];
-    return pool[Math.floor(Math.random() * pool.length)];
+    const totalWeight = pool.reduce((acc, item) => acc + (weights[item.rarity] || 0), 0);
+    let random = Math.random() * totalWeight;
+    for (const item of pool) {
+        if (random < (weights[item.rarity] || 0)) return item;
+        random -= (weights[item.rarity] || 0);
+    }
+    return pool[0];
 }
 
+// Helper: Find User
 async function findUser(msg, args) {
     const mention = msg.mentions.users.first();
     if (mention) return mention;
     const id = args[0];
     if (id && /^\d{17,20}$/.test(id)) {
-        try { return await client.users.fetch(id); } catch (err) { return null; }
+        try { return await client.users.fetch(id); } catch (e) { return null; }
     }
     return null;
 }
 
-// ---------------- SPIN LOGIC ----------------
-async function performSpin(source, type, isLucky) {
-    const user = source.user || source.author;
-    const id = user.id;
-    ensureUser(id);
-
-    if (isLucky && userData[id].luckySpins[type] <= 0) {
-        const msg = `❌ You don't have any **${type}** Lucky Spins left!`;
-        return source.replied || source.deferred ? source.followUp(msg) : source.reply(msg);
-    } else if (!isLucky && userData[id].spins[type] <= 0) {
-        const msg = `❌ You don't have any **${type}** Normal Spins left!`;
-        return source.replied || source.deferred ? source.followUp(msg) : source.reply(msg);
-    }
-
-    let weights = type === 'clan' ? CLAN_RARITY_WEIGHTS : type.startsWith('element') ? ELEMENT_RARITY_WEIGHTS : DEFAULT_RARITY_WEIGHTS;
-    let pool = type === 'clan' ? CLANS : type.startsWith('element') ? ELEMENTS : TRAITS;
-
-    let result;
-    let attempts = 0;
-    do {
-        result = weightedRandom(pool, weights, isLucky);
-        attempts++;
-    } while (userData[id].temp[type].filter(x => x.item === result.item).length >= 1 && attempts < 10);
-
-    const lastResult = userData[id].temp[type][userData[id].temp[type].length - 1];
-    const isBackToBackDupe = lastResult && lastResult.item === result.item;
-    userData[id].temp[type].push(result);
-
-    if (!isBackToBackDupe) {
-        if (isLucky) userData[id].luckySpins[type]--;
-        else userData[id].spins[type]--;
-    }
-    saveData();
-
-    const embed = new EmbedBuilder()
-        .setTitle(`🎲 ${type.toUpperCase()} SPIN ${isLucky ? '(LUCKY 🍀)' : ''}`)
-        .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
-        .setColor(RARITY_COLORS[result.rarity] || 0x000000)
-        .setDescription(`You spun: ${result.emoji} **${result.item}**\n**Rarity:** ${RARITY_EMOJI[result.rarity]} ${result.rarity}${isBackToBackDupe ? '\n\n*(Back-to-back Duplicate — spin refunded!)*' : ''}${isLucky ? '\n\n*🍀 Lucky Spin used! (Guaranteed Epic+, 5x Odds for Leg/Myth!)*' : ''}`)
-        .addFields(
-            { name: '🔋 Normal Spins', value: `\`${userData[id].spins[type]}\``, inline: true },
-            { name: '🍀 Lucky Spins', value: `\`${userData[id].luckySpins[type]}\``, inline: true },
-            { name: '📝 Recent Results', value: userData[id].temp[type].slice(-5).map(x => `\`${x.item}\``).join(', ') || 'None', inline: false }
-        )
-        .setTimestamp()
-        .setFooter({ text: 'Click Finalize to lock this result!' });
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Primary)
-    );
-
-    if (source.isButton && source.isButton()) await source.update({ embeds: [embed], components: [row] });
-    else await source.reply({ embeds: [embed], components: [row] });
-}
-
-async function showSpinChoice(source, type) {
-    const user = source.user || source.author;
-    const id = user.id;
-    ensureUser(id);
-    const embed = new EmbedBuilder()
-        .setTitle(`🎰 ${type.toUpperCase()} SPIN`)
-        .setDescription(`Choose which type of spin you want to use for **${type}**:`)
-        .setColor(0x7289da)
-        .addFields(
-            { name: '🔋 Normal', value: `\`${userData[id].spins[type]}\` remaining`, inline: true },
-            { name: '🍀 Lucky', value: `\`${userData[id].luckySpins[type]}\` remaining`, inline: true }
-        );
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`spinchoice_${type}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`spinchoice_${type}lucky_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Secondary)
-    );
-    if (source.isButton && source.isButton()) await source.update({ embeds: [embed], components: [row] });
-    else await source.reply({ embeds: [embed], components: [row] });
-}
-
-// ---------------- INTERACTION HANDLER ----------------
-client.on(Events.InteractionCreate, async interaction => {
-    try {
-        if (interaction.isButton()) {
-            const [action, type, originalUserId] = interaction.customId.split('_');
-            if (originalUserId && interaction.user.id !== originalUserId) return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
-            if (action === 'finalize') {
-                const id = interaction.user.id;
-                ensureUser(id);
-                const lastItem = userData[id].temp[type][userData[id].temp[type].length - 1];
-                if (!lastItem) return interaction.reply({ content: "❌ Nothing to finalize!", ephemeral: true });
-                userData[id].finalized[type] = lastItem.item;
-                userData[id].temp[type] = []; 
-                saveData();
-                const embed = new EmbedBuilder().setTitle("✅ Finalized!").setDescription(`Successfully locked in **${lastItem.item}** for your **${type}** slot.`).setColor(0x00ff00);
-                await interaction.update({ embeds: [embed], components: [] });
-            }
-            if (action === 'spinchoice') {
-                const isLucky = type.endsWith('lucky');
-                const realType = type.replace('lucky', '');
-                await performSpin(interaction, realType, isLucky);
-            }
-            if (action === 'spinagain') await showSpinChoice(interaction, type);
-        }
-        if (interaction.isStringSelectMenu()) {
-            const [action, targetId, category, originalUserId] = interaction.customId.split('_');
-            if (originalUserId && interaction.user.id !== originalUserId) return interaction.reply({ content: "❌ You cannot interact with this menu!", ephemeral: true });
-            if (action === 'givespec-category') {
-                const selectedCategory = interaction.values[0];
-                let items = selectedCategory === 'clan' ? CLANS : (selectedCategory.startsWith('element') ? ELEMENTS : TRAITS);
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`givespec-item_${targetId}_${selectedCategory}_${interaction.user.id}`)
-                    .setPlaceholder(`Choose a ${selectedCategory} to give...`)
-                    .addOptions(items.slice(0, 25).map(i => ({ label: i.item, description: `Rarity: ${i.rarity}`, value: i.item, emoji: i.emoji })));
-                await interaction.update({ content: `Now select the **${selectedCategory}** to give:`, components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            if (action === 'givespec-item') {
-                ensureUser(targetId);
-                userData[targetId].finalized[category] = interaction.values[0];
-                saveData();
-                const targetUser = await client.users.fetch(targetId);
-                await interaction.update({ content: `✅ Gave **${interaction.values[0]}** to **${targetUser.username}**!`, components: [], embeds: [] });
-            }
-            if (action === 'givels-category') {
-                const selectedCategory = interaction.values[0];
-                const targetUser = await client.users.fetch(targetId);
-                await interaction.update({ content: `How many **${selectedCategory}** Lucky Spins to give to **${targetUser.username}**?`, components: [] });
-                const filter = m => m.author.id === originalUserId && !isNaN(m.content);
-                const collector = interaction.channel.createMessageCollector({ filter, time: 15000, max: 1 });
-                collector.on('collect', async m => {
-                    const amount = parseInt(m.content);
-                    ensureUser(targetId);
-                    if (selectedCategory === 'all') ['clan', 'element1', 'element2', 'trait'].forEach(k => userData[targetId].luckySpins[k] += amount);
-                    else userData[targetId].luckySpins[selectedCategory] += amount;
-                    saveData();
-                    await m.reply(`✅ Gave **${amount}** Lucky Spins to **${targetUser.username}**!`);
-                });
-            }
-        }
-    } catch (err) { console.error("Error in interaction:", err); }
-});
-
-// ---------------- JOIN EVENTS (Auto-DM & Auto-Role) ----------------
-client.on(Events.GuildMemberAdd, async member => {
-    try {
-        // 1. Auto-Role (OC Pending)
-        const pendingRole = member.guild.roles.cache.get(OC_PENDING_ROLE_ID);
-        if (pendingRole) {
-            await member.roles.add(pendingRole).catch(e => console.error(`Failed to auto-role ${member.user.tag}:`, e));
-            ensureUser(member.id);
-            userData[member.id].oc_pending_start = Date.now();
-            saveData();
-        }
-
-        // 2. Auto-DM Welcome
-        const welcomeEmbed = new EmbedBuilder()
-            .setTitle("Welcome to **GENSHŌ — 幻象**")
-            .setColor(0x2f3136)
-            .setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n\nEvery choice you make matters here. Alliances, rivalries, and battles will shape your story.\n\n⚠️ **IMPORTANT:** You have a **3-day window** to submit your OC. Failure to do so will result in an automatic removal from the server.\n\nWill you rise as a legend… or fall into obscurity?\n\nYour journey starts now.`)
-            .setThumbnail(member.guild.iconURL())
-            .setTimestamp();
-
-        await member.send({ embeds: [welcomeEmbed] }).catch(() => {
-            console.log(`Could not send welcome DM to ${member.user.tag}. They may have DMs disabled.`);
-        });
-    } catch (err) { console.error("Error in join events:", err); }
-});
-
-// ---------------- BACKGROUND OC KICK TASK ----------------
-async function checkOCKicks() {
-    try {
-        const guilds = client.guilds.cache;
-        for (const [guildId, guild] of guilds) {
-            const members = await guild.members.fetch();
-            const now = Date.now();
-
-            for (const [memberId, member] of members) {
-                if (member.user.bot) continue;
-                const hasPendingRole = member.roles.cache.has(OC_PENDING_ROLE_ID);
-                ensureUser(memberId);
-                if (hasPendingRole) {
-                    if (!userData[memberId].oc_pending_start) {
-                        userData[memberId].oc_pending_start = now;
-                        saveData();
-                    } else {
-                        const startTime = userData[memberId].oc_pending_start;
-                        const elapsed = now - startTime;
-                        const limit = KICK_TIMEOUT_DAYS * 24 * 60 * 60 * 1000;
-                        if (elapsed >= limit) {
-                            try {
-                                await member.send(`You have been kicked from **${guild.name}** because you did not submit your OC within the required 3-day window. You are welcome to rejoin once you are ready to submit!`).catch(() => {});
-                                await member.kick("OC Submission Deadline Exceeded (3 Days)").then(() => {
-                                    console.log(`Kicked ${member.user.tag} for OC submission deadline.`);
-                                    userData[memberId].oc_pending_start = null;
-                                    saveData();
-                                });
-                            } catch (e) { console.error(`Failed to kick ${member.user.tag}:`, e); }
+// ----- BACKGROUND TASKS -----
+// 3-Day Kick Check
+setInterval(async () => {
+    const now = Date.now();
+    for (const [id, data] of Object.entries(userData)) {
+        if (data.oc_pending_start) {
+            if (now - data.oc_pending_start > 72 * 60 * 60 * 1000) {
+                try {
+                    const user = await client.users.fetch(id);
+                    await user.send("⚠️ You have been kicked from **GENSHŌ — 幻象** because you did not submit your OC within the 3-day window.").catch(() => {});
+                    for (const guild of client.guilds.cache.values()) {
+                        const member = await guild.members.fetch(id).catch(() => null);
+                        if (member && member.roles.cache.has(OC_PENDING_ROLE_ID)) {
+                            await member.kick("OC Submission Deadline Missed").catch(console.error);
                         }
                     }
-                } else {
-                    if (userData[memberId].oc_pending_start) {
-                        userData[memberId].oc_pending_start = null;
-                        saveData();
-                    }
-                }
+                    userData[id].oc_pending_start = null;
+                    saveData();
+                } catch (e) { console.error("Kick error:", e.message); }
             }
         }
-    } catch (err) { console.error("Error in OC kick task:", err); }
-}
+    }
+}, 10 * 60 * 1000);
 
-setInterval(checkOCKicks, 10 * 60 * 1000);
+// 12-Hour Reminder Ping
+setInterval(async () => {
+    try {
+        const channel = await client.channels.fetch(REMINDER_CHANNEL_ID);
+        if (!channel) return;
+        const members = await channel.guild.members.fetch();
+        const pending = members.filter(m => m.roles.cache.has(OC_PENDING_ROLE_ID));
+        if (pending.size > 0) {
+            const pings = pending.map(m => `<@${m.id}>`).join(' ');
+            await channel.send(`${pings}\n\n⚠️ **Reminder:** Please submit your OCs if you haven't already! Once your OC is submitted and accepted, you will receive full server access. Failure to submit within the 3-day window will result in an automatic removal from the server.`);
+        }
+    } catch (e) { console.error("Reminder error:", e.message); }
+}, 12 * 60 * 60 * 1000);
 
-// ---------------- COMMAND HANDLER ----------------
+// ----- EVENTS -----
+client.on('guildMemberAdd', async member => {
+    try {
+        await member.roles.add(OC_PENDING_ROLE_ID);
+        ensureUser(member.id);
+        userData[member.id].oc_pending_start = Date.now();
+        saveData();
+        const embed = new EmbedBuilder().setTitle("Welcome to **GENSHŌ — 幻象**").setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n\n**Full server access will be granted once your OC is submitted and accepted.**\n\n⚠️ **IMPORTANT:** You have a **3-day window** to submit your OC. Failure to do so will result in an automatic removal from the server.`).setColor(0x000000);
+        await member.send({ embeds: [embed] }).catch(() => {});
+    } catch (e) { console.error("Join error:", e.message); }
+});
+
 client.on('messageCreate', async msg => {
     if (msg.author.bot) return;
-
-    // --- AUTO-MODERATION (Staff Bypass) ---
-    if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        if (BANNED_WORDS.some(word => msg.content.toLowerCase().includes(word))) {
+    if (!msg.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        if (BANNED_WORDS.some(w => msg.content.toLowerCase().includes(w))) {
             await msg.delete().catch(() => {});
-            return msg.channel.send(`❌ <@${msg.author.id}>, your message was removed for containing banned words.`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
+            return msg.channel.send(`⚠️ <@${msg.author.id}>, inappropriate language.`).then(m => setTimeout(() => m.delete(), 3000));
         }
-        if (/(discord\.gg\/|discordapp\.com\/invite\/|discord\.com\/invite\/)/i.test(msg.content)) {
+        if (msg.content.includes('discord.gg/') || msg.mentions.users.size > 5) {
             await msg.delete().catch(() => {});
-            return msg.channel.send(`❌ <@${msg.author.id}>, server invites are not allowed!`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
-        }
-        if (msg.mentions.users.size > MASS_MENTION_LIMIT) {
-            await msg.delete().catch(() => {});
-            return msg.channel.send(`❌ <@${msg.author.id}>, please don't ping too many users at once.`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
-        }
-        const now = Date.now();
-        const userDataLogs = messageLog.get(msg.author.id) || [];
-        userDataLogs.push(now);
-        const recentMessages = userDataLogs.filter(time => now - time < ANTI_SPAM_TIME);
-        messageLog.set(msg.author.id, recentMessages);
-        if (recentMessages.length > ANTI_SPAM_LIMIT) {
-            await msg.delete().catch(() => {});
-            return msg.channel.send(`❌ <@${msg.author.id}>, please stop spamming!`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
+            return msg.channel.send(`⚠️ <@${msg.author.id}>, auto-mod triggered.`).then(m => setTimeout(() => m.delete(), 3000));
         }
     }
 
     if (!msg.content.startsWith('!')) return;
-    try {
-        const [cmd, ...args] = msg.content.slice(1).split(' ');
-        const id = msg.author.id;
+    const args = msg.content.slice(1).split(' ');
+    const cmd = args.shift().toLowerCase();
+    const id = msg.author.id;
+    ensureUser(id);
+
+    if (cmd === 'check') {
+        const target = await findUser(msg, args) || msg.author;
+        ensureUser(target.id);
+        const data = userData[target.id].finalized;
+        const embed = new EmbedBuilder().setTitle(`✨ ${target.username.toUpperCase()}'S SPECS`).setColor(0x2b2d31).setThumbnail(target.displayAvatarURL())
+            .addFields({ name: '🧬 Clan', value: `\`\`\`${data.clan}\`\`\``, inline: true }, { name: '🔥 Element 1', value: `\`\`\`${data.element1}\`\`\``, inline: true }, { name: '🌊 Element 2', value: `\`\`\`${data.element2}\`\`\``, inline: true }, { name: '🔋 Trait', value: `\`\`\`${data.trait}\`\`\``, inline: true });
+        return msg.reply({ embeds: [embed] });
+    }
+
+    if (['clan', 'element1', 'element2', 'trait'].includes(cmd)) {
+        const type = cmd;
+        const embed = new EmbedBuilder().setTitle(`🎰 ${type.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[type]}\n🍀 Lucky: ${userData[id].luckySpins[type]}`).setColor(0x7289da);
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`spin_normal_${type}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[type] <= 0),
+            new ButtonBuilder().setCustomId(`spin_lucky_${type}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[type] <= 0)
+        );
+        return msg.reply({ embeds: [embed], components: [row] });
+    }
+
+    if (cmd === 'announce' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const text = args.join(' ');
+        if (!text) return;
+        await msg.delete().catch(() => {});
+        return msg.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(0x2b2d31)] });
+    }
+
+    if (cmd === 'purge' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        let amt = args[0] === 'all' ? 100 : parseInt(args[0]);
+        if (isNaN(amt) || amt < 1) return;
+        await msg.channel.bulkDelete(Math.min(amt, 100), true);
+        return msg.channel.send(`✅ Purged ${amt} messages.`).then(m => setTimeout(() => m.delete(), 3000));
+    }
+
+    if (cmd === 'givespec' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const target = await findUser(msg, args);
+        if (!target) return;
+        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }]));
+        return msg.reply({ content: `Giving spec to **${target.username}**...`, components: [row] });
+    }
+
+    if (cmd === 'givels' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const target = await findUser(msg, args);
+        if (!target) return;
+        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givels_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }]));
+        return msg.reply({ content: `Giving Lucky Spins to **${target.username}**...`, components: [row] });
+    }
+
+    if (cmd === 'wipe' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const target = await findUser(msg, args);
+        if (!target) return;
+        ensureUser(target.id);
+        userData[target.id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None' };
+        saveData();
+        return msg.reply(`✅ Wiped specs for **${target.username}**.`);
+    }
+
+    if (cmd === 'resetspins' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const target = await findUser(msg, args);
+        if (!target) return;
+        ensureUser(target.id);
+        userData[target.id].spins = { clan: 15, element1: 5, element2: 5, trait: 3 };
+        saveData();
+        return msg.reply(`✅ Reset spins for **${target.username}**.`);
+    }
+});
+
+client.on(Events.InteractionCreate, async i => {
+    if (i.isButton()) {
+        const [action, mode, type, originalId] = i.customId.split('_');
+        if (originalId && i.user.id !== originalId) return i.reply({ content: "Unauthorized!", ephemeral: true });
+        const id = i.user.id;
         ensureUser(id);
 
-        if (cmd === 'clan' || cmd === 'element1' || cmd === 'element2' || cmd === 'trait') return await showSpinChoice(msg, cmd);
-
-        if (cmd === 'resetspins') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
-            const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Mention a user or ID.");
-            ensureUser(target.id);
-            userData[target.id].spins = { clan: 15, element1: 5, element2: 5, trait: 3 };
+        if (action === 'spin') {
+            const isLucky = mode === 'lucky';
+            if (isLucky) userData[id].luckySpins[type]--;
+            else userData[id].spins[type]--;
+            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : TRAITS);
+            const res = weightedRandom(pool, isLucky);
+            userData[id].temp[type].push(res);
             saveData();
-            return await msg.reply(`✅ Reset spins for **${target.username}** to defaults.`);
+            const embed = new EmbedBuilder().setTitle(isLucky ? "🍀 LUCKY SPIN" : "🎰 SPIN").setColor(RARITY_COLORS[res.rarity] || 0x3498db).setDescription(`You rolled: **${res.emoji} ${res.item}** (\`${res.rarity}\`)`);
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Secondary));
+            await i.update({ embeds: [embed], components: [row] });
+        } else if (action === 'finalize') {
+            const res = userData[id].temp[mode].pop();
+            if (res) {
+                userData[id].finalized[mode] = res.item;
+                userData[id].temp[mode] = [];
+                saveData();
+                await i.update({ content: `✅ Finalized **${res.item}**!`, embeds: [], components: [] });
+            }
+        } else if (action === 'spinagain') {
+            const embed = new EmbedBuilder().setTitle(`🎰 ${mode.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[mode]}\n🍀 Lucky: ${userData[id].luckySpins[mode]}`).setColor(0x7289da);
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`spin_normal_${mode}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[mode] <= 0), new ButtonBuilder().setCustomId(`spin_lucky_${mode}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[mode] <= 0));
+            await i.update({ embeds: [embed], components: [row] });
         }
+    }
 
-        if (cmd === 'wipe') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
-            const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Mention a user or ID.");
-            ensureUser(target.id);
-            userData[target.id].finalized = { clan: null, element1: null, element2: null, trait: null };
+    if (i.isStringSelectMenu()) {
+        const p = i.customId.split('_');
+        if (p[0] === 'give' && p[1] === 'cat') {
+            if (i.user.id !== p[3]) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            const type = i.values[0];
+            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : TRAITS);
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[2]}_${type}_${i.user.id}`).setPlaceholder(`Select ${type}`).addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
+            await i.update({ content: `Select **${type}** to give:`, components: [row] });
+        } else if (p[0] === 'give' && p[1] === 'item') {
+            if (i.user.id !== p[4]) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            ensureUser(p[2]);
+            userData[p[2]].finalized[p[3]] = i.values[0];
             saveData();
-            return await msg.reply(`✅ Wiped specs for **${target.username}**.`);
+            await i.update({ content: `✅ Gave **${i.values[0]}** to <@${p[2]}>!`, components: [] });
+        } else if (p[0] === 'givels' && p[1] === 'cat') {
+            if (i.user.id !== p[3]) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            const type = i.values[0];
+            await i.update({ content: `How many **${type}** Lucky Spins to give? (Type a number)`, components: [] });
+            const filter = m => m.author.id === i.user.id && !isNaN(parseInt(m.content));
+            const col = i.channel.createMessageCollector({ filter, time: 15000, max: 1 });
+            col.on('collect', m => {
+                const amt = parseInt(m.content);
+                ensureUser(p[2]);
+                userData[p[2]].luckySpins[type] += amt;
+                saveData();
+                m.reply(`✅ Gave **${amt}** Lucky Spins to <@${p[2]}>.`);
+            });
         }
-
-        if (cmd === 'givespec') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
-            const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Mention a user or ID.");
-            const menu = new StringSelectMenuBuilder().setCustomId(`givespec-category_${target.id}_none_${msg.author.id}`).setPlaceholder('Choose a category...')
-                .addOptions([{ label: 'Clan', value: 'clan', emoji: '⛩️' }, { label: 'Element 1', value: 'element1', emoji: '🔥' }, { label: 'Element 2', value: 'element2', emoji: '🌊' }, { label: 'Trait', value: 'trait', emoji: '✨' }]);
-            return await msg.reply({ content: `Giving spec to **${target.username}**:`, components: [new ActionRowBuilder().addComponents(menu)] });
-        }
-
-        if (cmd === 'givels') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
-            const target = await findUser(msg, args);
-            if (!target) return msg.reply("❌ Mention a user or ID.");
-            const menu = new StringSelectMenuBuilder().setCustomId(`givels-category_${target.id}_none_${msg.author.id}`).setPlaceholder('Choose category for Lucky Spins...')
-                .addOptions([{ label: 'Clan', value: 'clan', emoji: '⛩️' }, { label: 'Element 1', value: 'element1', emoji: '🔥' }, { label: 'Element 2', value: 'element2', emoji: '🌊' }, { label: 'Trait', value: 'trait', emoji: '✨' }, { label: 'All Categories', value: 'all', emoji: '🌟' }]);
-            return await msg.reply({ content: `Giving Lucky Spins to **${target.username}**:`, components: [new ActionRowBuilder().addComponents(menu)] });
-        }
-
-        if (cmd === 'check') {
-            let target = await findUser(msg, args) || msg.author;
-            ensureUser(target.id);
-            const data = userData[target.id].finalized;
-            const ls = userData[target.id].luckySpins;
-            const embed = new EmbedBuilder().setTitle(`📜 ${target.username.toUpperCase()}'S SPECS`).setThumbnail(target.displayAvatarURL()).setColor(0x2f3136)
-                .addFields({ name: '⛩️ Clan', value: `\`${data.clan || 'None'}\` (🍀 ${ls.clan})`, inline: true }, { name: '✨ Trait', value: `\`${data.trait || 'None'}\` (🍀 ${ls.trait})`, inline: true }, { name: '\u200B', value: '\u200B', inline: false },
-                    { name: '🔥 Element 1', value: `\`${data.element1 || 'None'}\` (🍀 ${ls.element1})`, inline: true }, { name: '🌊 Element 2', value: `\`${data.element2 || 'None'}\` (🍀 ${ls.element2})`, inline: true })
-                .setFooter({ text: "Use !clan, !element1, !element2, or !trait to spin!" }).setTimestamp();
-            return await msg.reply({ embeds: [embed] });
-        }
-
-        if (cmd === 'cmds') {
-            const embed = new EmbedBuilder().setTitle("🎮 BOT COMMANDS").setColor(0x7289da).addFields({ name: '🎲 Spinning', value: "`!clan`, `!element1`, `!element2`, `!trait`", inline: false }, { name: '📜 Info', value: "`!check @User`, `!cmds`", inline: false }, { name: '🎁 Staff', value: "`!givespec @User`, `!givels @User`, `!wipe @User`, `!resetspins @User`, `!announce [msg]`, `!purge [number/all]`", inline: false });
-            return await msg.reply({ embeds: [embed] });
-        }
-
-        if (cmd === 'announce') {
-            const text = args.join(' ');
-            if (!text) return await msg.reply('❌ Provide a message.');
-            try { await msg.delete(); } catch (e) {}
-            return await msg.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(0xffc107)] });
-        }
-
-        if (cmd === 'purge') {
-            if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Staff only!");
-            let amount = args[0] === 'all' ? 100 : parseInt(args[0]);
-            if (isNaN(amount) || amount < 1 || amount > 100) return msg.reply("❌ Provide a number between 1 and 100, or 'all' (clears 100).");
-            await msg.delete();
-            const deleted = await msg.channel.bulkDelete(amount, true);
-            const reply = await msg.channel.send(`✅ Purged **${deleted.size}** messages.`);
-            setTimeout(() => reply.delete().catch(() => {}), 3000);
-            return;
-        }
-    } catch (err) { console.error("Error in message handler:", err); }
+    }
 });
 
-client.once('ready', () => { 
-    console.log(`Logged in as ${client.user.tag}!`);
-    checkOCKicks(); 
-});
-client.login(process.env.BOT_TOKEN).catch(err => { console.error("Failed to login:", err); });
+client.once('ready', () => { console.log(`✅ Main Bot ONLINE: ${client.user.tag}`); });
+client.login(TOKEN);

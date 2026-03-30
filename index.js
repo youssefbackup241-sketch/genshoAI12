@@ -76,7 +76,11 @@ const ELEMENTS = [
 ];
 
 const TRAITS = [
-    { item: "Strong Body", rarity: "Rare", emoji: "💪" }, { item: "Fast Reflexes", rarity: "Rare", emoji: "⚡" }, { item: "High Intellect", rarity: "Epic", emoji: "🧠" }, { item: "Sage Mode", rarity: "Legendary", emoji: "🐸" }, { item: "Six Paths Power", rarity: "Mythical", emoji: "🌞" }
+    { item: "Prodigy", rarity: "Mythical", emoji: "💎" }, { item: "Clan Specialist", rarity: "Mythical", emoji: "🧬" },
+    { item: "Genius", rarity: "Legendary", emoji: "🧠" }, { item: "Analytical Eye", rarity: "Legendary", emoji: "👁️" }, { item: "Jutsu Amplification", rarity: "Legendary", emoji: "🔥" },
+    { item: "Iryojutsu Proficiency", rarity: "Epic", emoji: "🩹" }, { item: "Genjutsu/Illusionary Proficiency", rarity: "Epic", emoji: "🎭" },
+    { item: "Superhuman", rarity: "Rare", emoji: "💪" }, { item: "Scientist", rarity: "Rare", emoji: "🧪" },
+    { item: "Hard Working!", rarity: "Common", emoji: "🏋️" }, { item: "Knucklehead!", rarity: "Common", emoji: "🤪" }
 ];
 
 const KENJUTSU = [
@@ -317,9 +321,25 @@ client.on(Events.InteractionCreate, async i => {
         if (p[0] === 'give' && p[1] === 'cat') {
             if (i.user.id !== p[3]) return i.reply({ content: "Unauthorized!", ephemeral: true });
             const type = i.values[0];
-            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU));
-            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[2]}_${type}_${i.user.id}`).setPlaceholder(`Select ${type}`).addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
-            await i.update({ content: `Select **${type}** to give:`, components: [row] });
+            if (type === 'clan') {
+                const clansSorted = [...CLANS].sort((a, b) => a.item.localeCompare(b.item));
+                const mid = Math.ceil(clansSorted.length / 2);
+                const part1 = clansSorted.slice(0, mid);
+                const part2 = clansSorted.slice(mid);
+                const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_part_${p[2]}_clan_${i.user.id}`).setPlaceholder('Select Clan Part').addOptions([{ label: 'Clans (A-M)', value: 'part1' }, { label: 'Clans (N-Z)', value: 'part2' }]));
+                await i.update({ content: `Select **Clan** part to give to <@${p[2]}>:`, components: [row] });
+            } else {
+                const pool = type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU);
+                const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[2]}_${type}_${i.user.id}`).setPlaceholder(`Select ${type}`).addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
+                await i.update({ content: `Select **${type}** to give to <@${p[2]}>:`, components: [row] });
+            }
+        } else if (p[0] === 'give' && p[1] === 'item' && p[2] === 'part') {
+            if (i.user.id !== p[5]) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            const clansSorted = [...CLANS].sort((a, b) => a.item.localeCompare(b.item));
+            const mid = Math.ceil(clansSorted.length / 2);
+            const pool = i.values[0] === 'part1' ? clansSorted.slice(0, mid) : clansSorted.slice(mid);
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[3]}_clan_${i.user.id}`).setPlaceholder('Select Clan').addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
+            await i.update({ content: `Select **Clan** from ${i.values[0] === 'part1' ? 'A-M' : 'N-Z'} to give to <@${p[3]}>:`, components: [row] });
         } else if (p[0] === 'give' && p[1] === 'item') {
             if (i.user.id !== p[4]) return i.reply({ content: "Unauthorized!", ephemeral: true });
             ensureUser(p[2]);

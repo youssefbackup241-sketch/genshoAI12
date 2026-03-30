@@ -20,6 +20,7 @@ const TOKEN = process.env.BOT_TOKEN;
 // IDs
 const OC_PENDING_ROLE_ID = "1487175229485748390";
 const REMINDER_CHANNEL_ID = "1488008579498901635";
+const GHOST_PING_CHANNEL_ID = "1488021993948319865";
 
 // Database Setup
 const DB_FILE = './database.json';
@@ -43,17 +44,21 @@ function saveData() {
 function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = {
-            spins: { clan: 15, element1: 5, element2: 5, trait: 3 },
-            luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0 },
-            temp: { clan: [], element1: [], element2: [], trait: [] },
-            finalized: { clan: 'None', element1: 'None', element2: 'None', trait: 'None' },
+            spins: { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 },
+            luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 },
+            temp: { clan: [], element1: [], element2: [], trait: [], kenjutsu: [] },
+            finalized: { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None' },
             oc_pending_start: null
         };
     }
-    if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 5, element2: 5, trait: 3 };
-    if (!userData[id].luckySpins) userData[id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0 };
-    if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [] };
-    if (!userData[id].finalized) userData[id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None' };
+    if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 };
+    if (!userData[id].spins.kenjutsu || userData[id].spins.kenjutsu < 7) userData[id].spins.kenjutsu = 7;
+    if (!userData[id].luckySpins) userData[id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 };
+    if (!userData[id].luckySpins.kenjutsu) userData[id].luckySpins.kenjutsu = 0;
+    if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [], kenjutsu: [] };
+    if (!userData[id].temp.kenjutsu) userData[id].temp.kenjutsu = [];
+    if (!userData[id].finalized) userData[id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None' };
+    if (!userData[id].finalized.kenjutsu) userData[id].finalized.kenjutsu = 'None';
 }
 
 // ----- CONFIGURATION -----
@@ -72,6 +77,11 @@ const ELEMENTS = [
 
 const TRAITS = [
     { item: "Strong Body", rarity: "Rare", emoji: "💪" }, { item: "Fast Reflexes", rarity: "Rare", emoji: "⚡" }, { item: "High Intellect", rarity: "Epic", emoji: "🧠" }, { item: "Sage Mode", rarity: "Legendary", emoji: "🐸" }, { item: "Six Paths Power", rarity: "Mythical", emoji: "🌞" }
+];
+
+const KENJUTSU = [
+    { item: "Sun", rarity: "Mythical", emoji: "☀️" }, { item: "Moon", rarity: "Mythical", emoji: "🌙" },
+    { item: "Wind", rarity: "Rare", emoji: "🌪️" }, { item: "Water", rarity: "Rare", emoji: "💧" }, { item: "Thunder", rarity: "Rare", emoji: "⚡" }, { item: "Flame", rarity: "Rare", emoji: "🔥" }, { item: "Mist", rarity: "Rare", emoji: "🌫️" }
 ];
 
 const RARITY_COLORS = { Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0x9400d3, Rare: 0x1e90ff, Common: 0x808080 };
@@ -155,6 +165,13 @@ client.on('guildMemberAdd', async member => {
         saveData();
         const embed = new EmbedBuilder().setTitle("Welcome to **GENSHŌ — 幻象**").setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n\n**Full server access will be granted once your OC is submitted and accepted.**\n\n⚠️ **IMPORTANT:** You have a **3-day window** to submit your OC. Failure to do so will result in an automatic removal from the server.`).setColor(0x000000);
         await member.send({ embeds: [embed] }).catch(() => {});
+        
+        // Ghost Ping
+        const ghostChannel = await client.channels.fetch(GHOST_PING_CHANNEL_ID);
+        if (ghostChannel) {
+            const ghostMsg = await ghostChannel.send(`<@${member.id}>`);
+            await ghostMsg.delete().catch(() => {});
+        }
     } catch (e) { console.error("Join error:", e.message); }
 });
 
@@ -182,12 +199,21 @@ client.on('messageCreate', async msg => {
         ensureUser(target.id);
         const data = userData[target.id].finalized;
         const embed = new EmbedBuilder().setTitle(`✨ ${target.username.toUpperCase()}'S SPECS`).setColor(0x2b2d31).setThumbnail(target.displayAvatarURL())
-            .addFields({ name: '🧬 Clan', value: `\`\`\`${data.clan}\`\`\``, inline: true }, { name: '🔥 Element 1', value: `\`\`\`${data.element1}\`\`\``, inline: true }, { name: '🌊 Element 2', value: `\`\`\`${data.element2}\`\`\``, inline: true }, { name: '🔋 Trait', value: `\`\`\`${data.trait}\`\`\``, inline: true });
+            .addFields(
+                { name: '🧬 Clan', value: `\`\`\`${data.clan}\`\`\``, inline: true }, 
+                { name: '🔥 Element 1', value: `\`\`\`${data.element1}\`\`\``, inline: true }, 
+                { name: '🌊 Element 2', value: `\`\`\`${data.element2}\`\`\``, inline: true }, 
+                { name: '🔋 Trait', value: `\`\`\`${data.trait}\`\`\``, inline: true },
+                { name: '⚔️ Kenjutsu', value: `\`\`\`${data.kenjutsu}\`\`\``, inline: true }
+            );
         return msg.reply({ embeds: [embed] });
     }
 
-    if (['clan', 'element1', 'element2', 'trait'].includes(cmd)) {
+    if (['clan', 'element1', 'element2', 'trait', 'kenjutsu'].includes(cmd)) {
         const type = cmd;
+        if (type === 'kenjutsu' && userData[id].finalized.clan !== 'Kurogane') {
+            return msg.reply("❌ The Kenjutsu spin is exclusive to members of the **Kurogane** clan!");
+        }
         const embed = new EmbedBuilder().setTitle(`🎰 ${type.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[type]}\n🍀 Lucky: ${userData[id].luckySpins[type]}`).setColor(0x7289da);
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`spin_normal_${type}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[type] <= 0),
@@ -199,7 +225,7 @@ client.on('messageCreate', async msg => {
     if (cmd === 'cmds') {
         const embed = new EmbedBuilder().setTitle("📜 GENSHŌ RPG COMMANDS").setColor(0x2b2d31)
             .addFields(
-                { name: '✨ Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for a clan\n`!element1` - Spin for element 1\n`!element2` - Spin for element 2\n`!trait` - Spin for a trait" },
+                { name: '✨ Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for a clan\n`!element1` - Spin for element 1\n`!element2` - Spin for element 2\n`!trait` - Spin for a trait\n`!kenjutsu` - Spin for kenjutsu (Kurogane only)" },
                 { name: '🛡️ Staff Commands', value: "`!givespec @User` - Directly assign a spec\n`!givels @User` - Give lucky spins\n`!resetspins @User` - Reset normal spins\n`!wipe @User` - Clear a user's specs\n`!announce [msg]` - Post an announcement\n`!purge [num/all]` - Delete messages" }
             )
             .setFooter({ text: "Use !cmds to see this menu again!" });
@@ -223,14 +249,14 @@ client.on('messageCreate', async msg => {
     if (cmd === 'givespec' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const target = await findUser(msg, args);
         if (!target) return;
-        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }]));
+        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }, { label: 'Kenjutsu', value: 'kenjutsu' }]));
         return msg.reply({ content: `Giving spec to **${target.username}**...`, components: [row] });
     }
 
     if (cmd === 'givels' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const target = await findUser(msg, args);
         if (!target) return;
-        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givels_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }]));
+        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givels_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }, { label: 'Kenjutsu', value: 'kenjutsu' }]));
         return msg.reply({ content: `Giving Lucky Spins to **${target.username}**...`, components: [row] });
     }
 
@@ -238,7 +264,7 @@ client.on('messageCreate', async msg => {
         const target = await findUser(msg, args);
         if (!target) return;
         ensureUser(target.id);
-        userData[target.id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None' };
+        userData[target.id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None' };
         saveData();
         return msg.reply(`✅ Wiped specs for **${target.username}**.`);
     }
@@ -247,7 +273,7 @@ client.on('messageCreate', async msg => {
         const target = await findUser(msg, args);
         if (!target) return;
         ensureUser(target.id);
-        userData[target.id].spins = { clan: 15, element1: 5, element2: 5, trait: 3 };
+        userData[target.id].spins = { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 };
         saveData();
         return msg.reply(`✅ Reset spins for **${target.username}**.`);
     }
@@ -264,7 +290,7 @@ client.on(Events.InteractionCreate, async i => {
             const isLucky = mode === 'lucky';
             if (isLucky) userData[id].luckySpins[type]--;
             else userData[id].spins[type]--;
-            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : TRAITS);
+            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU));
             const res = weightedRandom(pool, isLucky);
             userData[id].temp[type].push(res);
             saveData();
@@ -291,7 +317,7 @@ client.on(Events.InteractionCreate, async i => {
         if (p[0] === 'give' && p[1] === 'cat') {
             if (i.user.id !== p[3]) return i.reply({ content: "Unauthorized!", ephemeral: true });
             const type = i.values[0];
-            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : TRAITS);
+            const pool = type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU));
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[2]}_${type}_${i.user.id}`).setPlaceholder(`Select ${type}`).addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
             await i.update({ content: `Select **${type}** to give:`, components: [row] });
         } else if (p[0] === 'give' && p[1] === 'item') {

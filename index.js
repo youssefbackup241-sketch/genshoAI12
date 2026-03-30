@@ -52,9 +52,9 @@ function ensureUser(id) {
         };
     }
     if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 };
-    if (!userData[id].spins.kenjutsu || userData[id].spins.kenjutsu < 7) userData[id].spins.kenjutsu = 7;
+    if (!userData[id].spins.kenjutsu && userData[id].spins.kenjutsu !== 0) userData[id].spins.kenjutsu = 7;
     if (!userData[id].luckySpins) userData[id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 };
-    if (!userData[id].luckySpins.kenjutsu) userData[id].luckySpins.kenjutsu = 0;
+    if (!userData[id].luckySpins.kenjutsu && userData[id].luckySpins.kenjutsu !== 0) userData[id].luckySpins.kenjutsu = 0;
     if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [], kenjutsu: [] };
     if (!userData[id].temp.kenjutsu) userData[id].temp.kenjutsu = [];
     if (!userData[id].finalized) userData[id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None' };
@@ -322,12 +322,9 @@ client.on(Events.InteractionCreate, async i => {
             if (i.user.id !== p[3]) return i.reply({ content: "Unauthorized!", ephemeral: true });
             const type = i.values[0];
             if (type === 'clan') {
-                const clansSorted = [...CLANS].sort((a, b) => a.item.localeCompare(b.item));
-                const mid = Math.ceil(clansSorted.length / 2);
-                const part1 = clansSorted.slice(0, mid);
-                const part2 = clansSorted.slice(mid);
-                const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_part_${p[2]}_clan_${i.user.id}`).setPlaceholder('Select Clan Part').addOptions([{ label: 'Clans (A-M)', value: 'part1' }, { label: 'Clans (N-Z)', value: 'part2' }]));
-                await i.update({ content: `Select **Clan** part to give to <@${p[2]}>:`, components: [row] });
+                const rarities = ["Mythical", "Legendary", "Epic", "Rare", "Common"];
+                const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_part_${p[2]}_clan_${i.user.id}`).setPlaceholder('Select Rarity Group').addOptions(rarities.map(r => ({ label: `${r} Clans`, value: r }))));
+                await i.update({ content: `Select **Clan Rarity** to give to <@${p[2]}>:`, components: [row] });
             } else {
                 const pool = type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU);
                 const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[2]}_${type}_${i.user.id}`).setPlaceholder(`Select ${type}`).addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
@@ -335,11 +332,10 @@ client.on(Events.InteractionCreate, async i => {
             }
         } else if (p[0] === 'give' && p[1] === 'item' && p[2] === 'part') {
             if (i.user.id !== p[5]) return i.reply({ content: "Unauthorized!", ephemeral: true });
-            const clansSorted = [...CLANS].sort((a, b) => a.item.localeCompare(b.item));
-            const mid = Math.ceil(clansSorted.length / 2);
-            const pool = i.values[0] === 'part1' ? clansSorted.slice(0, mid) : clansSorted.slice(mid);
+            const rarity = i.values[0];
+            const pool = CLANS.filter(c => c.rarity === rarity);
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[3]}_clan_${i.user.id}`).setPlaceholder('Select Clan').addOptions(pool.map(it => ({ label: it.item, value: it.item, description: it.rarity, emoji: it.emoji }))));
-            await i.update({ content: `Select **Clan** from ${i.values[0] === 'part1' ? 'A-M' : 'N-Z'} to give to <@${p[3]}>:`, components: [row] });
+            await i.update({ content: `Select **${rarity} Clan** to give to <@${p[3]}>:`, components: [row] });
         } else if (p[0] === 'give' && p[1] === 'item') {
             if (i.user.id !== p[4]) return i.reply({ content: "Unauthorized!", ephemeral: true });
             ensureUser(p[2]);

@@ -6,7 +6,8 @@ const client = new Client({
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMessages, 
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers // Added for GuildMemberAdd event
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences
     ],
     partials: [Partials.Channel, Partials.GuildMember, Partials.User]
 });
@@ -25,6 +26,9 @@ if (fs.existsSync(DATABASE_FILE)) {
 }
 
 // ----- CONFIG -----
+const OC_PENDING_ROLE_ID = "1487175229485748390";
+const KICK_TIMEOUT_DAYS = 3; 
+
 const CLANS = [
     // Mythical
     { item: "Ōtsutsuki", rarity: "Mythical", emoji: "👁️" },
@@ -96,10 +100,10 @@ const DEFAULT_RARITY_WEIGHTS = { Mythical: 1, Legendary: 5, Epic: 15, Rare: 30, 
 
 // ----- AUTO-MOD CONFIG -----
 const BANNED_WORDS = ['nigga', 'nigger', 'nigg', 'nig ga', 'faggot', 'fag', 'retard'];
-const ANTI_SPAM_LIMIT = 5; // Messages
-const ANTI_SPAM_TIME = 3000; // Milliseconds
-const MASS_MENTION_LIMIT = 5; // Pings
-const messageLog = new Collection(); // To track spam
+const ANTI_SPAM_LIMIT = 5; 
+const ANTI_SPAM_TIME = 3000; 
+const MASS_MENTION_LIMIT = 5; 
+const messageLog = new Collection(); 
 
 // ---------------- UTILS ----------------
 function saveData() { fs.writeFileSync(DATABASE_FILE, JSON.stringify(userData, null, 2)); }
@@ -110,7 +114,8 @@ function ensureUser(id) {
             spins: { clan: 15, element1: 5, element2: 5, trait: 3 }, 
             luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0 },
             temp: { clan: [], element1: [], element2: [], trait: [] }, 
-            finalized: { clan: null, element1: null, element2: null, trait: null } 
+            finalized: { clan: null, element1: null, element2: null, trait: null },
+            oc_pending_start: null 
         };
     }
     if (!userData[id].spins) userData[id].spins = {};
@@ -288,21 +293,75 @@ client.on(Events.InteractionCreate, async interaction => {
     } catch (err) { console.error("Error in interaction:", err); }
 });
 
-// ---------------- WELCOME DM ----------------
+// ---------------- JOIN EVENTS (Auto-DM & Auto-Role) ----------------
 client.on(Events.GuildMemberAdd, async member => {
     try {
+        // 1. Auto-Role (OC Pending)
+        const pendingRole = member.guild.roles.cache.get(OC_PENDING_ROLE_ID);
+        if (pendingRole) {
+            await member.roles.add(pendingRole).catch(e => console.error(`Failed to auto-role ${member.user.tag}:`, e));
+            ensureUser(member.id);
+            userData[member.id].oc_pending_start = Date.now();
+            saveData();
+        }
+
+        // 2. Auto-DM Welcome
         const welcomeEmbed = new EmbedBuilder()
             .setTitle("Welcome to **GENSHŌ — 幻象**")
             .setColor(0x2f3136)
-            .setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n\nEvery choice you make matters here. Alliances, rivalries, and battles will shape your story.\n\nWill you rise as a legend… or fall into obscurity?\n\nYour journey starts now.`)
+            .setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n\nEvery choice you make matters here. Alliances, rivalries, and battles will shape your story.\n\n⚠️ **IMPORTANT:** You have a **3-day window** to submit your OC. Failure to do so will result in an automatic removal from the server.\n\nWill you rise as a legend… or fall into obscurity?\n\nYour journey starts now.`)
             .setThumbnail(member.guild.iconURL())
             .setTimestamp();
 
         await member.send({ embeds: [welcomeEmbed] }).catch(() => {
             console.log(`Could not send welcome DM to ${member.user.tag}. They may have DMs disabled.`);
         });
-    } catch (err) { console.error("Error in welcome DM:", err); }
+    } catch (err) { console.error("Error in join events:", err); }
 });
+
+// ---------------- BACKGROUND OC KICK TASK ----------------
+async function checkOCKicks() {
+    try {
+        const guilds = client.guilds.cache;
+        for (const [guildId, guild] of guilds) {
+            const members = await guild.members.fetch();
+            const now = Date.now();
+
+            for (const [memberId, member] of members) {
+                if (member.user.bot) continue;
+                const hasPendingRole = member.roles.cache.has(OC_PENDING_ROLE_ID);
+                ensureUser(memberId);
+                if (hasPendingRole) {
+                    if (!userData[memberId].oc_pending_start) {
+                        userData[memberId].oc_pending_start = now;
+                        saveData();
+                    } else {
+                        const startTime = userData[memberId].oc_pending_start;
+                        const elapsed = now - startTime;
+                        const limit = KICK_TIMEOUT_DAYS * 24 * 60 * 60 * 1000;
+                        if (elapsed >= limit) {
+                            try {
+                                await member.send(`You have been kicked from **${guild.name}** because you did not submit your OC within the required 3-day window. You are welcome to rejoin once you are ready to submit!`).catch(() => {});
+                                await member.kick("OC Submission Deadline Exceeded (3 Days)").then(() => {
+                                    console.log(`Kicked ${member.user.tag} for OC submission deadline.`);
+                                    userData[memberId].oc_pending_start = null;
+                                    saveData();
+                                });
+                            } catch (e) { console.error(`Failed to kick ${member.user.tag}:`, e); }
+                        }
+                    }
+                } else {
+                    if (userData[memberId].oc_pending_start) {
+                        userData[memberId].oc_pending_start = null;
+                        saveData();
+                    }
+                }
+            }
+        }
+    } catch (err) { console.error("Error in OC kick task:", err); }
+}
+
+setInterval(checkOCKicks, 10 * 60 * 1000);
 
 // ---------------- COMMAND HANDLER ----------------
 client.on('messageCreate', async msg => {
@@ -310,22 +369,18 @@ client.on('messageCreate', async msg => {
 
     // --- AUTO-MODERATION (Staff Bypass) ---
     if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        // 1. Word Filter
         if (BANNED_WORDS.some(word => msg.content.toLowerCase().includes(word))) {
             await msg.delete().catch(() => {});
             return msg.channel.send(`❌ <@${msg.author.id}>, your message was removed for containing banned words.`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
         }
-        // 2. Invite Protection
         if (/(discord\.gg\/|discordapp\.com\/invite\/|discord\.com\/invite\/)/i.test(msg.content)) {
             await msg.delete().catch(() => {});
             return msg.channel.send(`❌ <@${msg.author.id}>, server invites are not allowed!`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
         }
-        // 3. Mass Mention Protection
         if (msg.mentions.users.size > MASS_MENTION_LIMIT) {
             await msg.delete().catch(() => {});
             return msg.channel.send(`❌ <@${msg.author.id}>, please don't ping too many users at once.`).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
         }
-        // 4. Anti-Spam
         const now = Date.now();
         const userDataLogs = messageLog.get(msg.author.id) || [];
         userDataLogs.push(now);
@@ -420,5 +475,8 @@ client.on('messageCreate', async msg => {
     } catch (err) { console.error("Error in message handler:", err); }
 });
 
-client.once('ready', () => { console.log(`Logged in as ${client.user.tag}!`); });
+client.once('ready', () => { 
+    console.log(`Logged in as ${client.user.tag}!`);
+    checkOCKicks(); 
+});
 client.login(process.env.BOT_TOKEN).catch(err => { console.error("Failed to login:", err); });

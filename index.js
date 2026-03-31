@@ -21,6 +21,7 @@ const TOKEN = process.env.BOT_TOKEN;
 const OC_PENDING_ROLE_ID = "1487175229485748390";
 const REMINDER_CHANNEL_ID = "1488008579498901635";
 const GHOST_PING_CHANNEL_ID = "1488021993948319865";
+const SPIN_CHANNELS = ["1487175230131535946", "1487175230555164876"];
 const AUTO_ROLES = [
     "1487175229506584767",
     "1487175229498458264",
@@ -223,6 +224,7 @@ client.on('messageCreate', async msg => {
     }
 
     if (['clan', 'element1', 'element2', 'trait', 'kenjutsu'].includes(cmd)) {
+        if (!SPIN_CHANNELS.includes(msg.channelId)) return msg.reply("❌ You can only use spin commands in the designated spin channels!");
         const type = cmd;
         if (type === 'kenjutsu' && userData[id].finalized.clan !== 'Kurogane') {
             return msg.reply("❌ The Kenjutsu spin is exclusive to members of the **Kurogane** clan!");
@@ -308,6 +310,7 @@ client.on(Events.InteractionCreate, async i => {
         ensureUser(id);
 
         if (action === 'spin') {
+            if (!SPIN_CHANNELS.includes(i.channelId)) return i.reply({ content: "❌ You can only spin in the designated spin channels!", ephemeral: true });
             const isLucky = mode === 'lucky';
             if (isLucky) userData[id].luckySpins[type]--;
             else userData[id].spins[type]--;
@@ -327,6 +330,7 @@ client.on(Events.InteractionCreate, async i => {
                 await i.update({ content: `✅ Finalized **${res.item}**!`, embeds: [], components: [] });
             }
         } else if (action === 'spinagain') {
+            if (!SPIN_CHANNELS.includes(i.channelId)) return i.reply({ content: "❌ You can only spin in the designated spin channels!", ephemeral: true });
             const embed = new EmbedBuilder().setTitle(`🎰 ${mode.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[mode]}\n🍀 Lucky: ${userData[id].luckySpins[mode]}`).setColor(0x7289da);
             const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`spin_normal_${mode}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[mode] <= 0), new ButtonBuilder().setCustomId(`spin_lucky_${mode}_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[mode] <= 0));
             await i.update({ embeds: [embed], components: [row] });

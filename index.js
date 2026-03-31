@@ -240,7 +240,7 @@ client.on('messageCreate', async msg => {
         const embed = new EmbedBuilder().setTitle("📜 GENSHŌ RPG COMMANDS").setColor(0x2b2d31)
             .addFields(
                 { name: '✨ Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for a clan\n`!element1` - Spin for element 1\n`!element2` - Spin for element 2\n`!trait` - Spin for a trait\n`!kenjutsu` - Spin for kenjutsu (Kurogane only)" },
-                { name: '🛡️ Staff Commands', value: "`!givespec @User` - Directly assign a spec\n`!givels @User` - Give lucky spins\n`!resetspins @User` - Reset normal spins\n`!wipe @User` - Clear a user's specs\n`!announce [msg]` - Post an announcement\n`!purge [num/all]` - Delete messages" }
+                { name: '🛡️ Staff Commands', value: "`!givespec @User` - Directly assign a spec\n`!givespins @User` - Give normal spins\n`!givels @User` - Give lucky spins\n`!resetspins @User` - Reset normal spins\n`!wipe @User` - Clear a user's specs\n`!announce [msg]` - Post an announcement\n`!purge [num/all]` - Delete messages" }
             )
             .setFooter({ text: "Use !cmds to see this menu again!" });
         return msg.reply({ embeds: [embed] });

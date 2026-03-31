@@ -53,14 +53,14 @@ function saveData() {
 function ensureUser(id) {
     if (!userData[id]) {
         userData[id] = {
-            spins: { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 },
+            spins: { clan: 25, element1: 5, element2: 5, trait: 7, kenjutsu: 7 },
             luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 },
             temp: { clan: [], element1: [], element2: [], trait: [], kenjutsu: [] },
             finalized: { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None' },
             oc_pending_start: null
         };
     }
-    if (!userData[id].spins) userData[id].spins = { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 };
+    if (!userData[id].spins) userData[id].spins = { clan: 25, element1: 5, element2: 5, trait: 7, kenjutsu: 7 };
     if (!userData[id].spins.kenjutsu && userData[id].spins.kenjutsu !== 0) userData[id].spins.kenjutsu = 7;
     if (!userData[id].luckySpins) userData[id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 };
     if (!userData[id].luckySpins.kenjutsu && userData[id].luckySpins.kenjutsu !== 0) userData[id].luckySpins.kenjutsu = 0;
@@ -229,8 +229,8 @@ client.on('messageCreate', async msg => {
         }
         const embed = new EmbedBuilder().setTitle(`🎰 ${type.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[type]}\n🍀 Lucky: ${userData[id].luckySpins[type]}`).setColor(0x7289da);
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`spin_normal_${type}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[type] <= 0),
-            new ButtonBuilder().setCustomId(`spin_lucky_${type}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[type] <= 0)
+            new ButtonBuilder().setCustomId(`spin_normal_${type}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[type] <= 0),
+            new ButtonBuilder().setCustomId(`spin_lucky_${type}_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[type] <= 0)
         );
         return msg.reply({ embeds: [embed], components: [row] });
     }
@@ -286,9 +286,17 @@ client.on('messageCreate', async msg => {
         const target = await findUser(msg, args);
         if (!target) return;
         ensureUser(target.id);
-        userData[target.id].spins = { clan: 15, element1: 5, element2: 5, trait: 3, kenjutsu: 7 };
+        userData[target.id].spins = { clan: 25, element1: 5, element2: 5, trait: 7, kenjutsu: 7 };
+        userData[target.id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 };
         saveData();
-        return msg.reply(`✅ Reset spins for **${target.username}**.`);
+        return msg.reply(`✅ Reset spins and lucky spins for **${target.username}**.`);
+    }
+
+    if (cmd === 'givespins' && msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const target = await findUser(msg, args);
+        if (!target) return;
+        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givespins_cat_${target.id}_${id}`).setPlaceholder('Select Category').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }, { label: 'Kenjutsu', value: 'kenjutsu' }]));
+        return msg.reply({ content: `Giving Normal Spins to **${target.username}**...`, components: [row] });
     }
 });
 
@@ -308,7 +316,7 @@ client.on(Events.InteractionCreate, async i => {
             userData[id].temp[type].push(res);
             saveData();
             const embed = new EmbedBuilder().setTitle(isLucky ? "🍀 LUCKY SPIN" : "🎰 SPIN").setColor(RARITY_COLORS[res.rarity] || 0x3498db).setDescription(`You rolled: **${res.emoji} ${res.item}** (\`${res.rarity}\`)`);
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`finalize_${type}`).setLabel('Finalize').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Secondary));
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`finalize_${type}_${id}`).setLabel('Finalize').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Secondary));
             await i.update({ embeds: [embed], components: [row] });
         } else if (action === 'finalize') {
             const res = userData[id].temp[mode].pop();
@@ -320,7 +328,7 @@ client.on(Events.InteractionCreate, async i => {
             }
         } else if (action === 'spinagain') {
             const embed = new EmbedBuilder().setTitle(`🎰 ${mode.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[mode]}\n🍀 Lucky: ${userData[id].luckySpins[mode]}`).setColor(0x7289da);
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`spin_normal_${mode}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[mode] <= 0), new ButtonBuilder().setCustomId(`spin_lucky_${mode}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[mode] <= 0));
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`spin_normal_${mode}_${id}`).setLabel('Normal Spin').setStyle(ButtonStyle.Primary).setDisabled(userData[id].spins[mode] <= 0), new ButtonBuilder().setCustomId(`spin_lucky_${mode}_${id}`).setLabel('Lucky Spin').setStyle(ButtonStyle.Success).setDisabled(userData[id].luckySpins[mode] <= 0));
             await i.update({ embeds: [embed], components: [row] });
         }
     }
@@ -363,6 +371,19 @@ client.on(Events.InteractionCreate, async i => {
                 userData[p[2]].luckySpins[type] += amt;
                 saveData();
                 m.reply(`✅ Gave **${amt}** Lucky Spins to <@${p[2]}>.`);
+            });
+        } else if (p[0] === 'givespins' && p[1] === 'cat') {
+            if (i.user.id !== p[3]) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            const type = i.values[0];
+            await i.update({ content: `How many **${type}** Normal Spins to give? (Type a number)`, components: [] });
+            const filter = m => m.author.id === i.user.id && !isNaN(parseInt(m.content));
+            const col = i.channel.createMessageCollector({ filter, time: 15000, max: 1 });
+            col.on('collect', m => {
+                const amt = parseInt(m.content);
+                ensureUser(p[2]);
+                userData[p[2]].spins[type] += amt;
+                saveData();
+                m.reply(`✅ Gave **${amt}** Normal Spins to <@${p[2]}>.`);
             });
         }
     }

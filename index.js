@@ -89,8 +89,7 @@ const TRAITS = [
     { item: "Prodigy", rarity: "Mythical", emoji: "💎" }, { item: "Clan Specialist", rarity: "Mythical", emoji: "🧬" },
     { item: "Genius", rarity: "Legendary", emoji: "🧠" }, { item: "Analytical Eye", rarity: "Legendary", emoji: "👁️" }, { item: "Jutsu Amplification", rarity: "Legendary", emoji: "🔥" },
     { item: "Iryojutsu Proficiency", rarity: "Epic", emoji: "🩹" }, { item: "Genjutsu/Illusionary Proficiency", rarity: "Epic", emoji: "🎭" },
-    { item: "Superhuman", rarity: "Rare", emoji: "💪" }, { item: "Scientist", rarity: "Rare", emoji: "🧪" },
-    { item: "Hard Working!", rarity: "Common", emoji: "🏋️" }, { item: "Knucklehead!", rarity: "Common", emoji: "🤪" }
+    { item: "Superhuman", rarity: "Rare", emoji: "💪" }, { item: "Scientist", rarity: "Rare", emoji: "🧪" }
 ];
 
 const KENJUTSU = [

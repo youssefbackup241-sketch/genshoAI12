@@ -327,6 +327,7 @@ client.on('guildMemberAdd', async member => {
 
 client.on('messageCreate', async msg => {
     if (msg.author.bot) return;
+    console.log(`[DEBUG] Message received: ${msg.content} in channel ${msg.channelId}`);
 
     if (BANNED_WORDS.some(w => msg.content.toLowerCase().includes(w))) {
         await msg.delete().catch(() => {});
@@ -336,6 +337,7 @@ client.on('messageCreate', async msg => {
     if (!msg.content.startsWith('!')) return;
     const args = msg.content.slice(1).split(' ');
     const cmd = args.shift().toLowerCase();
+    console.log(`[DEBUG] Command detected: ${cmd}`);
     const id = msg.author.id;
     ensureUser(id);
 
@@ -519,5 +521,5 @@ client.on(Events.InteractionCreate, async i => {
     }
 });
 
-client.once('ready', () => { console.log(`✅ Main Bot ONLINE: ${client.user.tag}`); });
+client.once(Events.ClientReady, () => { console.log(`✅ Main Bot ONLINE: ${client.user.tag}`); });
 client.login(TOKEN);

@@ -365,7 +365,7 @@ client.on('messageCreate', async msg => {
             .setColor(0x2b2d31)
             .addFields(
                 { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty" },
-                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Roles\n`!cap [item]` - Cap an item\n`!uncap [item]` - Uncap an item\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs" }
+                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Roles\n`!cap [item]` - Cap an item\n`!uncap [item]` - Uncap an item\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement" }
             )
             .setFooter({ text: "Use spins in designated channels only." });
         return msg.reply({ embeds: [embed] });
@@ -449,6 +449,12 @@ client.on('messageCreate', async msg => {
             userData[target.id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None', village: 'None', specialty: 'None', subSpecialty: 'None' };
             saveData();
             return msg.reply(`✅ Wiped **${target.username}**.`);
+        }
+        if (cmd === 'announce') {
+            const text = args.join(' ');
+            if (!text) return;
+            const embed = new EmbedBuilder().setDescription(text).setColor(0x000000);
+            return msg.channel.send({ embeds: [embed] });
         }
     }
 });

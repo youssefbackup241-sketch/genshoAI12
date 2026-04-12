@@ -359,6 +359,18 @@ client.on('messageCreate', async msg => {
         return msg.reply({ embeds: [embed] });
     }
 
+    if (cmd === 'cmds') {
+        const embed = new EmbedBuilder()
+            .setTitle("📜 GENSHŌ COMMANDS")
+            .setColor(0x2b2d31)
+            .addFields(
+                { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty" },
+                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Roles\n`!cap [item]` - Cap an item\n`!uncap [item]` - Uncap an item\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs" }
+            )
+            .setFooter({ text: "Use spins in designated channels only." });
+        return msg.reply({ embeds: [embed] });
+    }
+
     if (['clan', 'element1', 'element2', 'trait', 'kenjutsu', 'villagespin'].includes(cmd)) {
         if (!SPIN_CHANNELS.includes(msg.channelId)) return msg.reply("❌ Designated spin channels only!");
         const type = cmd === 'villagespin' ? 'village' : cmd;

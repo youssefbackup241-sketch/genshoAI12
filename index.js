@@ -435,6 +435,7 @@ client.on('messageCreate', async msg => {
         if (cmd === 'announce') {
             const text = args.join(' ');
             if (!text) return;
+            await msg.delete().catch(() => {});
             const embed = new EmbedBuilder().setDescription(text).setColor(0x000000);
             return msg.channel.send({ embeds: [embed] });
         }

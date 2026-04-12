@@ -444,11 +444,39 @@ client.on('messageCreate', async msg => {
         }
         if (cmd === 'wipe') {
             const target = await findUser(msg, args);
-            if (!target) return;
+            if (!target) return msg.reply("❌ Mention a user to wipe.");
             ensureUser(target.id);
+            
+            const member = await msg.guild.members.fetch(target.id).catch(() => null);
+            if (member) {
+                const keepRoles = [
+                    "1487175229506584767",
+                    "1487175229498458264",
+                    "1487175229473296415",
+                    "1487175229426893001",
+                    "1487175229410377787",
+                    "1488684798254780416",
+                    "1487175229393473724",
+                    "1487175229351526720"
+                ];
+                
+                // Filter roles to remove (those not in the keep list and not the @everyone role)
+                const rolesToRemove = member.roles.cache.filter(role => !keepRoles.includes(role.id) && role.id !== msg.guild.id);
+                if (rolesToRemove.size > 0) {
+                    await member.roles.remove(rolesToRemove).catch(e => console.error(`Wipe role remove error: ${e.message}`));
+                }
+                
+                // Add the pending role
+                await member.roles.add("1487175229485748390").catch(e => console.error(`Wipe role add error: ${e.message}`));
+                
+                // Reset nickname to Discord default
+                await member.setNickname(null).catch(e => console.error(`Wipe nickname reset error: ${e.message}`));
+            }
+
             userData[target.id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None', village: 'None', specialty: 'None', subSpecialty: 'None' };
+            userData[target.id].oc_pending_start = Date.now(); // Restart the 3-day timer
             saveData();
-            return msg.reply(`✅ Wiped **${target.username}**.`);
+            return msg.reply(`✅ Wiped **${target.username}**. Roles updated and nickname reset.`);
         }
         if (cmd === 'announce') {
             const text = args.join(' ');

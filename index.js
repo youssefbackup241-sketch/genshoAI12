@@ -637,7 +637,8 @@ client.on(Events.InteractionCreate, async i => {
             } else {
                 const rank = RANKS.find(r => r.value === rankVal);
                 await assignRoles(member, targetId);
-                await member.roles.add(rank.roleId).catch(() => {});
+                await member.roles.add([rank.roleId, ACCEPTED_ROLE_ID]).catch(() => {});
+                await member.roles.remove(OC_PENDING_ROLE_ID).catch(() => {});
                 userData[targetId].oc_pending_start = null; saveData();
                 await i.update({ content: `✅ **${member.user.username}** accepted as **${rankVal}**!`, components: [] });
             }
@@ -648,7 +649,8 @@ client.on(Events.InteractionCreate, async i => {
             const kage = KAGE_ROLES.find(k => k.value === kageVal);
             const kageRank = RANKS.find(r => r.value === 'Kage');
             await assignRoles(member, targetId);
-            await member.roles.add([kageRank.roleId, kage.roleId]).catch(() => {});
+            await member.roles.add([kageRank.roleId, kage.roleId, ACCEPTED_ROLE_ID]).catch(() => {});
+            await member.roles.remove(OC_PENDING_ROLE_ID).catch(() => {});
             userData[targetId].oc_pending_start = null; saveData();
             await i.update({ content: `✅ **${member.user.username}** accepted as **${kageVal}**!`, components: [] });
         } else if (p[0] === 'givespins' && p[1] === 'mode') {
@@ -657,7 +659,7 @@ client.on(Events.InteractionCreate, async i => {
             await i.update({ content: `Select item to give **${mode}** spins for:`, components: [row] });
         } else if (p[0] === 'givespins' && p[1] === 'type') {
             const targetId = p[2], mode = p[3], type = i.values[0];
-            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givespins_amt_${targetId}_${mode}_${type}_${id}`).setPlaceholder('Select Amount').addOptions([1, 2, 3, 5, 10, 20, 50].map(n => ({ label: `${n} Spins`, value: `${n}` }))));
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givespins_amt_${targetId}_${mode}_type_${id}`).setPlaceholder('Select Amount').addOptions([1, 2, 3, 5, 10, 20, 50].map(n => ({ label: `${n} Spins`, value: `${n}` }))));
             await i.update({ content: `Select amount of **${mode}** ${type} spins:`, components: [row] });
         } else if (p[0] === 'givespins' && p[1] === 'amt') {
             const targetId = p[2], mode = p[3], type = p[4], amt = parseInt(i.values[0]);

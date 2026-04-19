@@ -367,7 +367,7 @@ client.on('messageCreate', async msg => {
         const embed = new EmbedBuilder().setTitle("📜 GENSHŌ COMMANDS").setColor(0x2b2d31)
             .addFields(
                 { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty\n`!ems` - Uchiha EMS Transplant" },
-                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Rank\n`!givespins @User` - Give Normal/Lucky Spins\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement\n`!emslogs` - View EMS transplant logs\n`!purge [amount]` - Bulk delete messages" }
+                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Rank\n`!givespins @User` - Give Normal/Lucky Spins\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement\n`!emslogs` - View EMS transplant logs\n`!purge [amount]` - Bulk delete messages\n`!givems @User` - Give Mangekyou Sharingan" }
             ).setFooter({ text: "Use spins in designated channels only." });
         return msg.reply({ embeds: [embed] });
     }
@@ -505,6 +505,14 @@ client.on('messageCreate', async msg => {
             if (!deleted) return msg.reply("❌ Failed to purge messages. They may be older than 14 days.").then(m => setTimeout(() => m.delete(), 3000));
             return msg.channel.send(`✅ Purged **${deleted.size}** messages.`).then(m => setTimeout(() => m.delete(), 3000));
         }
+        if (cmd === 'givems') {
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Mention a user to give Mangekyou Sharingan.");
+            const member = await msg.guild.members.fetch(target.id).catch(() => null);
+            if (!member) return msg.reply("❌ User not found in server.");
+            await member.roles.add(MS_ROLE_ID).catch(() => {});
+            return msg.reply(`✅ Successfully gave **Mangekyou Sharingan** to **${target.username}**.`);
+        }
     }
 });
 
@@ -533,19 +541,7 @@ client.on(Events.InteractionCreate, async i => {
             });
             saveData();
 
-            const auditChannel = await client.channels.fetch(AUDIT_LOG_CHANNEL_ID).catch(() => null);
-            const auditEmbed = new EmbedBuilder()
-                .setTitle("📝 EMS TRANSPLANT LOG")
-                .addFields(
-                    { name: "User", value: `<@${id}> (${i.user.username})`, inline: true },
-                    { name: "Donor Relation", value: category.toUpperCase(), inline: true },
-                    { name: "Donor Name", value: donorName, inline: true },
-                    { name: "Result", value: success ? "✅ SUCCESS" : "❌ FAILURE", inline: true }
-                )
-                .setColor(success ? 0x00ff00 : 0xff0000)
-                .setTimestamp();
-
-            if (auditChannel) await auditChannel.send({ embeds: [auditEmbed] });
+            // Channel logging removed per user request. !emslogs command remains for tracking.
 
             if (success) {
                 await member.roles.add(EMS_ROLE_ID).catch(() => {});

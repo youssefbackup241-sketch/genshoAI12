@@ -67,6 +67,7 @@ const KAGE_ROLES = [
 const DB_FILE = './database.json';
 let userData = {};
 let capData = { capped: [] };
+let emsLogs = [];
 
 function loadData() {
     if (fs.existsSync(DB_FILE)) {
@@ -76,6 +77,7 @@ function loadData() {
                 const parsed = JSON.parse(content);
                 userData = parsed.userData || {};
                 capData = parsed.capData || { capped: [] };
+                emsLogs = parsed.emsLogs || [];
             }
         } catch (e) { console.error("⚠️ Database load error:", e.message); }
     }
@@ -84,7 +86,7 @@ loadData();
 
 function saveData() { 
     try { 
-        fs.writeFileSync(DB_FILE, JSON.stringify({ userData, capData }, null, 2)); 
+        fs.writeFileSync(DB_FILE, JSON.stringify({ userData, capData, emsLogs }, null, 2)); 
     } 
     catch (e) { console.error("⚠️ Database save error:", e.message); }
 }
@@ -197,8 +199,8 @@ const BANNED_WORDS = ["nigga", "nigger", "nigg", "nig ga", "faggot", "fag", "ret
 
 // Helper: Weighted Random
 function weightedRandom(items, isLucky = false) {
-    const weights = { Common: 70, Rare: 25, Epic: 4, Legendary: 0.9, Mythical: 0.1 };
-    let pool = items.filter(i => !capData.capped.includes(i.item));
+    const weights = { Mythical: 0.1, Legendary: 1, Epic: 5, Rare: 20, Common: 73.9 };
+    let pool = items.filter(i => weights[i.rarity] > 0);
     if (pool.length === 0) pool = items; 
 
     if (isLucky) {
@@ -365,7 +367,7 @@ client.on('messageCreate', async msg => {
         const embed = new EmbedBuilder().setTitle("📜 GENSHŌ COMMANDS").setColor(0x2b2d31)
             .addFields(
                 { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty\n`!ems` - Uchiha EMS Transplant" },
-                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Rank\n`!givespins @User` - Give Normal/Lucky Spins\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement" }
+                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Rank\n`!givespins @User` - Give Normal/Lucky Spins\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement\n`!emslogs` - View EMS transplant logs\n`!purge [amount]` - Bulk delete messages" }
             ).setFooter({ text: "Use spins in designated channels only." });
         return msg.reply({ embeds: [embed] });
     }
@@ -393,6 +395,26 @@ client.on('messageCreate', async msg => {
         return msg.reply({ embeds: [embed], components: [row] });
     }
 
+    if (cmd === 'emslogs') {
+        if (!msg.member.permissions.has(PermissionsBitField.Flags.Administrator)) return msg.reply("❌ Admin only.");
+        if (emsLogs.length === 0) return msg.reply("📝 No EMS transplant logs found.");
+
+        const embed = new EmbedBuilder()
+            .setTitle("👁️ EMS TRANSPLANTATION LOGS")
+            .setColor(0x800000)
+            .setTimestamp();
+
+        const recentLogs = emsLogs.slice(-10).reverse();
+        let logText = "";
+        recentLogs.forEach((log, index) => {
+            const date = new Date(log.timestamp).toLocaleDateString();
+            logText += `**${index + 1}.** <@${log.userId}> | **Donor:** ${log.donorName} | **Relation:** ${log.relation.toUpperCase()} | **Result:** ${log.success ? "✅" : "❌"} | *${date}*\n`;
+        });
+
+        embed.setDescription(logText || "No recent logs.");
+        return msg.reply({ embeds: [embed] });
+    }
+
     if (['clan', 'element1', 'element2', 'trait', 'kenjutsu', 'villagespin'].includes(cmd)) {
         if (!SPIN_CHANNELS.includes(msg.channelId)) return msg.reply("❌ Designated spin channels only!");
         const type = cmd === 'villagespin' ? 'village' : cmd;
@@ -418,7 +440,7 @@ client.on('messageCreate', async msg => {
             const target = await findUser(msg, args);
             if (!target) return msg.reply("❌ Mention a user to accept.");
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`accept_rank_${target.id}_${id}`).setPlaceholder('Select Rank').addOptions(RANKS.map(r => ({ label: r.label, value: r.value }))));
-            return msg.reply({ content: `Select rank for **${target.username}**:`, components: [row] });
+            return msg.reply({ content: `Accepting **${target.username}**. Select their rank:`, components: [row] });
         }
         if (cmd === 'givespins') {
             const target = await findUser(msg, args);
@@ -475,6 +497,14 @@ client.on('messageCreate', async msg => {
             const embed = new EmbedBuilder().setDescription(text).setColor(0x000000);
             return msg.channel.send({ embeds: [embed] });
         }
+        if (cmd === 'purge') {
+            const amount = parseInt(args[0]);
+            if (isNaN(amount) || amount < 1 || amount > 100) return msg.reply("❌ Provide an amount between 1 and 100.");
+            await msg.delete().catch(() => {});
+            const deleted = await msg.channel.bulkDelete(amount, true).catch(() => null);
+            if (!deleted) return msg.reply("❌ Failed to purge messages. They may be older than 14 days.").then(m => setTimeout(() => m.delete(), 3000));
+            return msg.channel.send(`✅ Purged **${deleted.size}** messages.`).then(m => setTimeout(() => m.delete(), 3000));
+        }
     }
 });
 
@@ -492,13 +522,24 @@ client.on(Events.InteractionCreate, async i => {
             const success = Math.random() < chances[category];
             const member = await i.guild.members.fetch(id);
 
+            // Log EMS Transplant
+            emsLogs.push({
+                userId: id,
+                username: i.user.username,
+                donorName: donorName,
+                relation: category,
+                success: success,
+                timestamp: Date.now()
+            });
+            saveData();
+
             const auditChannel = await client.channels.fetch(AUDIT_LOG_CHANNEL_ID).catch(() => null);
             const auditEmbed = new EmbedBuilder()
                 .setTitle("📝 EMS TRANSPLANT LOG")
                 .addFields(
                     { name: "User", value: `<@${id}> (${i.user.username})`, inline: true },
                     { name: "Donor Relation", value: category.toUpperCase(), inline: true },
-                    { name: "Donor RP Name", value: donorName, inline: true },
+                    { name: "Donor Name", value: donorName, inline: true },
                     { name: "Result", value: success ? "✅ SUCCESS" : "❌ FAILURE", inline: true }
                 )
                 .setColor(success ? 0x00ff00 : 0xff0000)

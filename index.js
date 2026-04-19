@@ -331,6 +331,16 @@ client.on('messageCreate', async msg => {
         const target = await findUser(msg, args) || msg.author;
         ensureUser(target.id);
         const data = userData[target.id].finalized;
+        
+        // Find user's rank from roles
+        const member = await msg.guild.members.fetch(target.id).catch(() => null);
+        let userRank = "None";
+        if (member) {
+            const allRanks = [...RANKS, ...KAGE_ROLES];
+            const foundRank = allRanks.find(r => member.roles.cache.has(r.roleId));
+            if (foundRank) userRank = foundRank.label;
+        }
+
         const embed = new EmbedBuilder().setTitle(`✨ ${target.username.toUpperCase()}'S SPECS`).setColor(0x2b2d31)
             .addFields(
                 { name: '🧬 Clan', value: `\`\`\`${data.clan}\`\`\``, inline: true }, 
@@ -340,7 +350,8 @@ client.on('messageCreate', async msg => {
                 { name: '⚔️ Kenjutsu', value: `\`\`\`${data.kenjutsu}\`\`\``, inline: true },
                 { name: '🏘️ Village', value: `\`\`\`${data.village || 'None'}\`\`\``, inline: true },
                 { name: '🌀 Specialty', value: `\`\`\`${data.specialty || 'None'}\`\`\``, inline: true },
-                { name: '🩹 Sub-Specialty', value: `\`\`\`${data.subSpecialty || 'None'}\`\`\``, inline: true }
+                { name: '🩹 Sub-Specialty', value: `\`\`\`${data.subSpecialty || 'None'}\`\`\``, inline: true },
+                { name: '🎖️ Rank', value: `\`\`\`${userRank}\`\`\``, inline: true }
             );
         return msg.reply({ embeds: [embed] });
     }

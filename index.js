@@ -22,6 +22,11 @@ const OC_PENDING_ROLE_ID = "1487175229485748390";
 const ACCEPTED_ROLE_ID = "1487175229351526717";
 const REMINDER_CHANNEL_ID = "1488008579498901635";
 const GHOST_PING_CHANNEL_ID = "1488021993948319865";
+const AUDIT_LOG_CHANNEL_ID = "1488008579498901635"; // Defaulting to reminder channel for audit logs if not specified
+
+const UCHIHA_ROLE_ID = "1487175229360046226";
+const MS_ROLE_ID = "1487175229360046226"; // Using the same as provided Uchiha ID for MS as per prompt context
+const EMS_ROLE_ID = "1487175229360046225";
 const SPIN_CHANNELS = ["1487175230131535946", "1487175230555164876"];
 const AUTO_ROLES = [
     "1487175229506584767",
@@ -359,10 +364,33 @@ client.on('messageCreate', async msg => {
     if (cmd === 'cmds') {
         const embed = new EmbedBuilder().setTitle("📜 GENSHŌ COMMANDS").setColor(0x2b2d31)
             .addFields(
-                { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty" },
+                { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty\n`!ems` - Uchiha EMS Transplant" },
                 { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Rank\n`!givespins @User` - Give Normal/Lucky Spins\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement" }
             ).setFooter({ text: "Use spins in designated channels only." });
         return msg.reply({ embeds: [embed] });
+    }
+
+    if (cmd === 'ems') {
+        const member = msg.member;
+        if (!member.roles.cache.has(UCHIHA_ROLE_ID) || !member.roles.cache.has(MS_ROLE_ID)) {
+            return msg.reply("❌ You must be an **Uchiha** and possess the **Mangekyou Sharingan** to attempt an EMS transplant.");
+        }
+        if (member.roles.cache.has(EMS_ROLE_ID)) {
+            return msg.reply("✨ You already possess the **Eternal Mangekyou Sharingan**.");
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle("👁️ EMS TRANSPLANTATION")
+            .setDescription("To achieve the **Eternal Mangekyou Sharingan**, you must transplant the eyes of another Uchiha who possesses the Mangekyou Sharingan.\n\n⚠️ **WARNING:** This process is risky and its success depends entirely on the blood relation of the donor eyes.")
+            .setColor(0x800000)
+            .setImage("https://media.discordapp.net/attachments/1487175230131535946/1234567890/ems_ritual.gif"); // Placeholder for a cool visual
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`ems_start_${id}`).setLabel('Transplant Eyes').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`ems_leave_${id}`).setLabel('Leave').setStyle(ButtonStyle.Secondary)
+        );
+
+        return msg.reply({ embeds: [embed], components: [row] });
     }
 
     if (['clan', 'element1', 'element2', 'trait', 'kenjutsu', 'villagespin'].includes(cmd)) {
@@ -454,7 +482,61 @@ client.on(Events.InteractionCreate, async i => {
     const id = i.user.id;
     ensureUser(id);
 
+    if (i.isModalSubmit()) {
+        if (i.customId.startsWith('ems_modal_')) {
+            const [,, category, originalId] = i.customId.split('_');
+            if (id !== originalId) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            
+            const donorName = i.fields.getTextInputValue('donor_name');
+            const chances = { 'close': 0.6, 'distant': 0.3, 'clan': 0.1 };
+            const success = Math.random() < chances[category];
+            const member = await i.guild.members.fetch(id);
+
+            const auditChannel = await client.channels.fetch(AUDIT_LOG_CHANNEL_ID).catch(() => null);
+            const auditEmbed = new EmbedBuilder()
+                .setTitle("📝 EMS TRANSPLANT LOG")
+                .addFields(
+                    { name: "User", value: `<@${id}> (${i.user.username})`, inline: true },
+                    { name: "Donor Relation", value: category.toUpperCase(), inline: true },
+                    { name: "Donor RP Name", value: donorName, inline: true },
+                    { name: "Result", value: success ? "✅ SUCCESS" : "❌ FAILURE", inline: true }
+                )
+                .setColor(success ? 0x00ff00 : 0xff0000)
+                .setTimestamp();
+
+            if (auditChannel) await auditChannel.send({ embeds: [auditEmbed] });
+
+            if (success) {
+                await member.roles.add(EMS_ROLE_ID).catch(() => {});
+                return i.reply({ content: `✨ **SUCCESS!** The transplantation was successful. You have awakened the **Eternal Mangekyou Sharingan**.`, ephemeral: false });
+            } else {
+                return i.reply({ content: `❌ **FAILURE.** The transplantation failed. Your eyes rejected the donor's Mangekyou Sharingan.`, ephemeral: false });
+            }
+        }
+    }
+
     if (i.isButton()) {
+        if (i.customId.startsWith('ems_start_')) {
+            const originalId = i.customId.split('_')[2];
+            if (id !== originalId) return i.reply({ content: "Unauthorized!", ephemeral: true });
+
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId(`ems_select_${id}`)
+                    .setPlaceholder('Select Donor Relation')
+                    .addOptions([
+                        { label: 'Close Relative (60%)', value: 'close', description: 'Parents, Siblings, Grandparents, Children' },
+                        { label: 'Distant Relative (30%)', value: 'distant', description: 'Cousins, Aunts/Uncles, Great-grandparents' },
+                        { label: 'Clan Member (10%)', value: 'clan', description: 'Broader group, tribal lineage' }
+                    ])
+            );
+            return i.update({ content: "Select the relation of the donor eyes:", embeds: [], components: [row] });
+        }
+        if (i.customId.startsWith('ems_leave_')) {
+            const originalId = i.customId.split('_')[2];
+            if (id !== originalId) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            return i.update({ content: "You decided to leave the ritual.", embeds: [], components: [] });
+        }
         const [action, mode, type, originalId] = i.customId.split('_');
         if (originalId && id !== originalId) return i.reply({ content: "Unauthorized!", ephemeral: true });
         if (action === 'spin') {
@@ -481,6 +563,26 @@ client.on(Events.InteractionCreate, async i => {
 
     if (i.isStringSelectMenu()) {
         const p = i.customId.split('_');
+        if (p[0] === 'ems' && p[1] === 'select') {
+            const targetId = p[2];
+            if (id !== targetId) return i.reply({ content: "Unauthorized!", ephemeral: true });
+            const category = i.values[0];
+
+            const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+            const modal = new ModalBuilder()
+                .setCustomId(`ems_modal_${category}_${id}`)
+                .setTitle('EMS Transplantation Details');
+
+            const nameInput = new TextInputBuilder()
+                .setCustomId('donor_name')
+                .setLabel("Who do the eyes belong to? (RP Name)")
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder("e.g. Itachi Uchiha")
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+            return i.showModal(modal);
+        }
         if (p[0] === 'select') {
             const type = p[1], choice = i.values[0];
             const config = type === 'specialty' ? SPECIALTIES.find(s => s.item === choice) : SUB_SPECIALTIES.find(s => s.item === choice);

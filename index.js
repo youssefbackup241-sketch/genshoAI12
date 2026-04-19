@@ -34,10 +34,34 @@ const AUTO_ROLES = [
     "1487175229351526720"
 ];
 
+// RANKS
+const RANKS = [
+    { label: "Kage", value: "Kage", roleId: "1487175229498458263" },
+    { label: "Elite Jounin", value: "Elite Jounin", roleId: "1487175229498458262" },
+    { label: "Jounin", value: "Jounin", roleId: "1487175229485748395" },
+    { label: "Chunin", value: "Chunin", roleId: "1487175229485748393" },
+    { label: "Genin", value: "Genin", roleId: "1487175229485748392" },
+    { label: "Academy", value: "Academy", roleId: "1487175229485748391" },
+    { label: "Rogue", value: "Rogue", roleId: "1487175229485748394" }
+];
+
+const KAGE_ROLES = [
+    { label: "Raikage", value: "Raikage", roleId: "1487175229506584770" },
+    { label: "Sub-Raikage", value: "Sub-Raikage", roleId: "1487175229506584769" },
+    { label: "Hokage", value: "Hokage", roleId: "1487175229519298625" },
+    { label: "Sub-Hokage", value: "Sub-Hokage", roleId: "1487175229519298624" },
+    { label: "Kazekage", value: "Kazekage", roleId: "1487175229506584776" },
+    { label: "Sub-Kazekage", value: "Sub-Kazekage", roleId: "1487175229506584775" },
+    { label: "Tsuchikage", value: "Tsuchikage", roleId: "1487175229506584774" },
+    { label: "Sub-Tsuchikage", value: "Sub-Tsuchikage", roleId: "1487175229506584773" },
+    { label: "Mizukage", value: "Mizukage", roleId: "1487175229506584772" },
+    { label: "Sub-Mizukage", value: "Sub-Mizukage", roleId: "1487175229506584771" }
+];
+
 // Database Setup
 const DB_FILE = './database.json';
 let userData = {};
-let capData = { capped: [] }; // Stores capped item names
+let capData = { capped: [] };
 
 function loadData() {
     if (fs.existsSync(DB_FILE)) {
@@ -67,23 +91,17 @@ function ensureUser(id) {
             luckySpins: { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 },
             temp: { clan: [], element1: [], element2: [], trait: [], kenjutsu: [], village: [] },
             finalized: { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None', village: 'None', specialty: 'None', subSpecialty: 'None' },
-            oc_pending_start: null
+            oc_pending_start: null,
+            last_reminder: null
         };
     }
-    // Deep check for missing fields
     if (!userData[id].spins) userData[id].spins = { clan: 25, element1: 5, element2: 5, trait: 7, kenjutsu: 7, village: 2 };
     if (userData[id].spins.village === undefined) userData[id].spins.village = 2;
-    if (!userData[id].spins.kenjutsu && userData[id].spins.kenjutsu !== 0) userData[id].spins.kenjutsu = 7;
+    if (userData[id].spins.kenjutsu === undefined) userData[id].spins.kenjutsu = 7;
     if (!userData[id].luckySpins) userData[id].luckySpins = { clan: 0, element1: 0, element2: 0, trait: 0, kenjutsu: 0 };
-    if (!userData[id].luckySpins.kenjutsu && userData[id].luckySpins.kenjutsu !== 0) userData[id].luckySpins.kenjutsu = 0;
+    if (userData[id].luckySpins.kenjutsu === undefined) userData[id].luckySpins.kenjutsu = 0;
     if (!userData[id].temp) userData[id].temp = { clan: [], element1: [], element2: [], trait: [], kenjutsu: [], village: [] };
-    if (!userData[id].temp.village) userData[id].temp.village = [];
-    if (!userData[id].temp.kenjutsu) userData[id].temp.kenjutsu = [];
     if (!userData[id].finalized) userData[id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None', village: 'None', specialty: 'None', subSpecialty: 'None' };
-    if (userData[id].finalized.village === undefined) userData[id].finalized.village = 'None';
-    if (userData[id].finalized.specialty === undefined) userData[id].finalized.specialty = 'None';
-    if (userData[id].finalized.subSpecialty === undefined) userData[id].finalized.subSpecialty = 'None';
-    if (!userData[id].finalized.kenjutsu) userData[id].finalized.kenjutsu = 'None';
 }
 
 // ----- CONFIGURATION -----
@@ -169,8 +187,6 @@ const SUB_SPECIALTIES = [
     { item: "Kenjutsu", emoji: "🗡️", roleId: "1488611720195735822", restricted: "Kurogane" }
 ];
 
-const ALL_POOLS = [...CLANS, ...ELEMENTS, ...TRAITS, ...KENJUTSU, ...VILLAGES, ...SPECIALTIES, ...SUB_SPECIALTIES];
-
 const RARITY_COLORS = { Mythical: 0xff00ff, Legendary: 0xffa500, Epic: 0x9400d3, Rare: 0x1e90ff, Common: 0x808080 };
 const BANNED_WORDS = ["nigga", "nigger", "nigg", "nig ga", "faggot", "fag", "retard"];
 
@@ -194,45 +210,27 @@ function weightedRandom(items, isLucky = false) {
     return pool[0];
 }
 
-// Helper: Get counts and target cap for balanced distribution
+// Helper: Balanced logic
 function getBalancedInfo(pool, type) {
     const counts = {};
     pool.forEach(p => counts[p.item] = 0);
-
     Object.values(userData).forEach(data => {
         if (data.finalized && data.finalized[type] && data.finalized[type] !== 'None') {
             counts[data.finalized[type]] = (counts[data.finalized[type]] || 0) + 1;
         }
     });
-
     const currentCounts = Object.values(counts);
     const minCount = Math.min(...currentCounts);
-    
     let targetCap = 3;
     while (minCount >= targetCap) { targetCap += 3; }
-
     return { counts, targetCap };
 }
 
-// Helper: Balanced Selection
 function getBalancedChoice(pool, type) {
     const { counts, targetCap } = getBalancedInfo(pool, type);
-    
-    // Auto-cap logic: If an item has reached the current target cap, it is effectively "capped" for this tier
     let available = pool.filter(p => counts[p.item] < targetCap && !capData.capped.includes(p.item));
-    
-    // If all items in a tier are full, the tier naturally moves up (handled by targetCap logic)
-    // but we ensure we don't return items that are manually capped by staff
-    if (available.length === 0) {
-        available = pool.filter(p => !capData.capped.includes(p.item));
-    }
-    
+    if (available.length === 0) available = pool.filter(p => !capData.capped.includes(p.item));
     return available.length > 0 ? available : pool;
-}
-
-// Helper: Balanced Village Random
-function getBalancedVillage() {
-    return getBalancedChoice(VILLAGES, 'village')[Math.floor(Math.random() * getBalancedChoice(VILLAGES, 'village').length)];
 }
 
 // Helper: Assign Role
@@ -240,20 +238,16 @@ async function assignRoles(member, id) {
     if (!member) return;
     const data = userData[id].finalized;
     const rolesToAdd = [ACCEPTED_ROLE_ID];
-    
     const pools = [CLANS, ELEMENTS, ELEMENTS, TRAITS, VILLAGES, SPECIALTIES, SUB_SPECIALTIES];
     const keys = ['clan', 'element1', 'element2', 'trait', 'village', 'specialty', 'subSpecialty'];
-    
     keys.forEach((key, idx) => {
         const item = pools[idx].find(i => i.item === data[key]);
         if (item?.roleId) rolesToAdd.push(item.roleId);
     });
-
     await member.roles.add(rolesToAdd.filter(id => id)).catch(() => {});
     await member.roles.remove(OC_PENDING_ROLE_ID).catch(() => {});
 }
 
-// Helper: Find User
 async function findUser(msg, args) {
     const mention = msg.mentions.users.first();
     if (mention) return mention;
@@ -268,20 +262,38 @@ async function findUser(msg, args) {
 setInterval(async () => {
     const now = Date.now();
     for (const [id, data] of Object.entries(userData)) {
-        if (data.oc_pending_start && now - data.oc_pending_start > 72 * 60 * 60 * 1000) {
-            try {
-                const user = await client.users.fetch(id);
-                await user.send("⚠️ Kicked from **GENSHŌ — 幻象** (OC deadline missed).").catch(() => {});
-                for (const guild of client.guilds.cache.values()) {
-                    const member = await guild.members.fetch(id).catch(() => null);
-                    if (member && member.roles.cache.has(OC_PENDING_ROLE_ID)) await member.kick("OC Missed").catch(() => {});
-                }
-                userData[id].oc_pending_start = null;
-                saveData();
-            } catch (e) {}
+        if (!data.oc_pending_start) continue;
+        const guild = client.guilds.cache.first();
+        if (!guild) continue;
+        const member = await guild.members.fetch(id).catch(() => null);
+        if (!member || !member.roles.cache.has(OC_PENDING_ROLE_ID)) {
+            userData[id].oc_pending_start = null;
+            saveData();
+            continue;
+        }
+
+        const elapsed = now - data.oc_pending_start;
+        // Kick after 3 days
+        if (elapsed > 72 * 60 * 60 * 1000) {
+            await member.send("⚠️ Kicked from **GENSHŌ — 幻象** (OC deadline missed).").catch(() => {});
+            await member.kick("OC Missed").catch(() => {});
+            userData[id].oc_pending_start = null;
+            saveData();
+            continue;
+        }
+
+        // Reminder every 12 hours
+        if (!data.last_reminder || now - data.last_reminder > 12 * 60 * 60 * 1000) {
+            const reminderChannel = await client.channels.fetch(REMINDER_CHANNEL_ID).catch(() => null);
+            if (reminderChannel) {
+                await reminderChannel.send(`⚠️ <@${id}>, this is a reminder to submit your OC. You have **${Math.round((72 * 60 * 60 * 1000 - elapsed) / (60 * 60 * 1000))} hours** remaining before automatic removal.`).catch(() => {});
+            }
+            await member.send(`⚠️ **OC REMINDER:** You have a character pending in **GENSHŌ**. Please submit your OC soon to avoid being kicked.`).catch(() => {});
+            userData[id].last_reminder = now;
+            saveData();
         }
     }
-}, 10 * 60 * 1000);
+}, 15 * 60 * 1000);
 
 // ----- EVENTS -----
 client.on('guildMemberAdd', async member => {
@@ -290,12 +302,11 @@ client.on('guildMemberAdd', async member => {
         ensureUser(member.id);
         userData[member.id].oc_pending_start = Date.now();
         saveData();
-        const ghostChannel = await client.channels.fetch(GHOST_PING_CHANNEL_ID);
+        const ghostChannel = await client.channels.fetch(GHOST_PING_CHANNEL_ID).catch(() => null);
         if (ghostChannel) {
             const m = await ghostChannel.send(`<@${member.id}>`);
             await m.delete().catch(() => {});
         }
-
         const welcomeEmbed = new EmbedBuilder()
             .setTitle("Welcome to **GENSHŌ — 幻象**")
             .setDescription(`You’ve stepped into a world shaped by the aftermath of chaos… where peace is fragile, and power defines your path.\n\nBefore you begin, make sure you:\n• Read the rules carefully\n• Create your character properly\n• Submit your OC before getting started\n• Understand the world and its lore\n• **Spin for your village using \`!villagespin\`**\n• **Choose your path with \`!specialty\` and \`!subspecialty\`**\n\n**Full server access will be granted once your OC is submitted and accepted by staff using \`!accept\`.**\n\n⚠️ **IMPORTANT:** You have a **3-day window** to submit your OC. Failure to do so will result in an automatic removal from the server.`)
@@ -306,12 +317,10 @@ client.on('guildMemberAdd', async member => {
 
 client.on('messageCreate', async msg => {
     if (msg.author.bot) return;
-
     if (BANNED_WORDS.some(w => msg.content.toLowerCase().includes(w))) {
         await msg.delete().catch(() => {});
         return msg.channel.send(`⚠️ <@${msg.author.id}>, inappropriate language.`).then(m => setTimeout(() => m.delete(), 3000));
     }
-
     if (!msg.content.startsWith('!')) return;
     const args = msg.content.slice(1).split(' ');
     const cmd = args.shift().toLowerCase();
@@ -337,14 +346,11 @@ client.on('messageCreate', async msg => {
     }
 
     if (cmd === 'cmds') {
-        const embed = new EmbedBuilder()
-            .setTitle("📜 GENSHŌ COMMANDS")
-            .setColor(0x2b2d31)
+        const embed = new EmbedBuilder().setTitle("📜 GENSHŌ COMMANDS").setColor(0x2b2d31)
             .addFields(
                 { name: '👤 Player Commands', value: "`!check` - View your specs\n`!clan` - Spin for Clan\n`!element1` - Spin for 1st Element\n`!element2` - Spin for 2nd Element\n`!trait` - Spin for Trait\n`!kenjutsu` - Spin for Kenjutsu (Kurogane)\n`!villagespin` - Spin for Village\n`!specialty` - Choose Specialty\n`!subspecialty` - Choose Sub-Specialty" },
-                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Roles\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement" }
-            )
-            .setFooter({ text: "Use spins in designated channels only." });
+                { name: '🛡️ Staff Commands (Admin Only)', value: "`!accept @User` - Accept OC & Give Rank\n`!givespins @User` - Give Normal/Lucky Spins\n`!cap` - Open Capping Menu\n`!uncap` - Open Uncapping Menu\n`!givespec @User` - Manually set specs\n`!resetspins @User` - Reset user spins\n`!wipe @User` - Wipe user specs\n`!announce [text]` - Send an announcement" }
+            ).setFooter({ text: "Use spins in designated channels only." });
         return msg.reply({ embeds: [embed] });
     }
 
@@ -364,18 +370,7 @@ client.on('messageCreate', async msg => {
         const type = cmd === 'specialty' ? 'specialty' : 'subSpecialty';
         const pool = cmd === 'specialty' ? SPECIALTIES : SUB_SPECIALTIES;
         const available = getBalancedChoice(pool, type);
-        
-        const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId(`select_${type}_${id}`)
-                .setPlaceholder(`Choose your ${cmd}`)
-                .addOptions(available.map(opt => ({
-                    label: opt.item,
-                    value: opt.item,
-                    emoji: opt.emoji,
-                    description: opt.restricted ? `Restricted to ${opt.restricted}` : undefined
-                })))
-        );
+        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`select_${type}_${id}`).setPlaceholder(`Choose your ${cmd}`).addOptions(available.map(opt => ({ label: opt.item, value: opt.item, emoji: opt.emoji, description: opt.restricted ? `Restricted to ${opt.restricted}` : undefined }))));
         return msg.reply({ content: `Choose your **${cmd}**:`, components: [row] });
     }
 
@@ -383,13 +378,14 @@ client.on('messageCreate', async msg => {
         if (cmd === 'accept') {
             const target = await findUser(msg, args);
             if (!target) return msg.reply("❌ Mention a user to accept.");
-            ensureUser(target.id);
-            const member = await msg.guild.members.fetch(target.id).catch(() => null);
-            if (member) {
-                await assignRoles(member, target.id);
-                return msg.reply(`✅ **${target.username}** has been accepted! Roles assigned and access granted.`);
-            }
-            return msg.reply("❌ User not found in server.");
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`accept_rank_${target.id}_${id}`).setPlaceholder('Select Rank').addOptions(RANKS.map(r => ({ label: r.label, value: r.value }))));
+            return msg.reply({ content: `Select rank for **${target.username}**:`, components: [row] });
+        }
+        if (cmd === 'givespins') {
+            const target = await findUser(msg, args);
+            if (!target) return msg.reply("❌ Mention a user.");
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givespins_mode_${target.id}_${id}`).setPlaceholder('Select Spin Type').addOptions([{ label: 'Normal Spins', value: 'normal' }, { label: 'Lucky Spins', value: 'lucky' }]));
+            return msg.reply({ content: `Give spins to **${target.username}**:`, components: [row] });
         }
         if (cmd === 'cap') {
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`cap_cat_${id}`).setPlaceholder('Select Category to Cap').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Elements', value: 'elements' }, { label: 'Trait', value: 'trait' }, { label: 'Kenjutsu', value: 'kenjutsu' }, { label: 'Village', value: 'village' }, { label: 'Specialty', value: 'specialty' }, { label: 'Sub-Specialty', value: 'subSpecialty' }]));
@@ -421,10 +417,11 @@ client.on('messageCreate', async msg => {
             ensureUser(target.id);
             const member = await msg.guild.members.fetch(target.id).catch(() => null);
             if (member) {
-                const keepRoles = ["1487175229506584767", "1487175229498458264", "1487175229473296415", "1487175229426893001", "1487175229410377787", "1488684798254780416", "1487175229393473724", "1487175229351526720"];
+                const keepRoles = AUTO_ROLES;
                 const rolesToRemove = member.roles.cache.filter(role => !keepRoles.includes(role.id) && role.id !== msg.guild.id);
                 if (rolesToRemove.size > 0) await member.roles.remove(rolesToRemove).catch(() => {});
-                await member.roles.add("1487175229485748390").catch(() => {});
+                await member.roles.remove(ACCEPTED_ROLE_ID).catch(() => {});
+                await member.roles.add(OC_PENDING_ROLE_ID).catch(() => {});
                 await member.setNickname(null).catch(() => {});
             }
             userData[target.id].finalized = { clan: 'None', element1: 'None', element2: 'None', trait: 'None', kenjutsu: 'None', village: 'None', specialty: 'None', subSpecialty: 'None' };
@@ -449,17 +446,11 @@ client.on(Events.InteractionCreate, async i => {
     if (i.isButton()) {
         const [action, mode, type, originalId] = i.customId.split('_');
         if (originalId && id !== originalId) return i.reply({ content: "Unauthorized!", ephemeral: true });
-
         if (action === 'spin') {
-            if (!SPIN_CHANNELS.includes(i.channelId)) return i.reply({ content: "Designated channels only!", ephemeral: true });
             const isLucky = mode === 'lucky';
-            if (isLucky) userData[id].luckySpins[type]--;
-            else userData[id].spins[type]--;
-            
-            let res = type === 'village' ? getBalancedVillage() : weightedRandom(type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU)), isLucky);
-            
-            userData[id].temp[type].push(res);
-            saveData();
+            if (isLucky) userData[id].luckySpins[type]--; else userData[id].spins[type]--;
+            let res = type === 'village' ? getBalancedChoice(VILLAGES, 'village')[Math.floor(Math.random() * getBalancedChoice(VILLAGES, 'village').length)] : weightedRandom(type === 'clan' ? CLANS : (type.startsWith('element') ? ELEMENTS : (type === 'trait' ? TRAITS : KENJUTSU)), isLucky);
+            userData[id].temp[type].push(res); saveData();
             const embed = new EmbedBuilder().setTitle(isLucky ? "🍀 LUCKY SPIN" : "🎰 SPIN").setColor(RARITY_COLORS[res.rarity] || 0x3498db).setDescription(`Rolled: **${res.emoji} ${res.item}**${res.rarity ? ` (\`${res.rarity}\`)` : ""}`);
             const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`finalize_${type}_${id}`).setLabel('Finalize').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`spinagain_${type}_${id}`).setLabel('Spin Again').setStyle(ButtonStyle.Secondary));
             await i.update({ embeds: [embed], components: [row] });
@@ -467,10 +458,8 @@ client.on(Events.InteractionCreate, async i => {
             const res = userData[id].temp[mode].pop();
             if (res) {
                 if (capData.capped.includes(res.item)) return i.reply({ content: `❌ **${res.item}** is capped! Spin again.`, ephemeral: true });
-                userData[id].finalized[mode] = res.item;
-                userData[id].temp[mode] = [];
-                saveData();
-                await i.update({ content: `✅ Finalized **${res.item}**! Roles will be assigned upon \`!accept\`.`, embeds: [], components: [] });
+                userData[id].finalized[mode] = res.item; userData[id].temp[mode] = []; saveData();
+                await i.update({ content: `✅ Finalized **${res.item}**! Roles assigned on \`!accept\`.`, embeds: [], components: [] });
             }
         } else if (action === 'spinagain') {
             const embed = new EmbedBuilder().setTitle(`🎰 ${mode.toUpperCase()} SPIN`).setDescription(`🔋 Normal: ${userData[id].spins[mode]}\n🍀 Lucky: ${userData[id].luckySpins[mode] || 0}`).setColor(0x7289da);
@@ -482,31 +471,65 @@ client.on(Events.InteractionCreate, async i => {
     if (i.isStringSelectMenu()) {
         const p = i.customId.split('_');
         if (p[0] === 'select') {
-            const type = p[1];
-            const choice = i.values[0];
+            const type = p[1], choice = i.values[0];
             const config = type === 'specialty' ? SPECIALTIES.find(s => s.item === choice) : SUB_SPECIALTIES.find(s => s.item === choice);
             if (config.restricted && userData[id].finalized.clan !== config.restricted) return i.reply({ content: `❌ Restricted to **${config.restricted}**!`, ephemeral: true });
-            if (capData.capped.includes(choice)) return i.reply({ content: `❌ **${choice}** is currently capped!`, ephemeral: true });
-            userData[id].finalized[type] = choice;
+            if (capData.capped.includes(choice)) return i.reply({ content: `❌ **${choice}** is capped!`, ephemeral: true });
+            userData[id].finalized[type] = choice; saveData();
+            await i.update({ content: `✅ Chosen **${choice}**! Roles assigned on \`!accept\`.`, components: [] });
+        } else if (p[0] === 'accept' && p[1] === 'rank') {
+            const targetId = p[2], rankVal = i.values[0];
+            const member = await i.guild.members.fetch(targetId).catch(() => null);
+            if (!member) return i.reply("❌ User not found.");
+            if (rankVal === 'Kage') {
+                const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`accept_kage_${targetId}_${id}`).setPlaceholder('Select Kage Role').addOptions(KAGE_ROLES.map(k => ({ label: k.label, value: k.value }))));
+                await i.update({ content: `Select specific Kage role for <@${targetId}>:`, components: [row] });
+            } else {
+                const rank = RANKS.find(r => r.value === rankVal);
+                await assignRoles(member, targetId);
+                await member.roles.add(rank.roleId).catch(() => {});
+                userData[targetId].oc_pending_start = null; saveData();
+                await i.update({ content: `✅ **${member.user.username}** accepted as **${rankVal}**!`, components: [] });
+            }
+        } else if (p[0] === 'accept' && p[1] === 'kage') {
+            const targetId = p[2], kageVal = i.values[0];
+            const member = await i.guild.members.fetch(targetId).catch(() => null);
+            if (!member) return i.reply("❌ User not found.");
+            const kage = KAGE_ROLES.find(k => k.value === kageVal);
+            const kageRank = RANKS.find(r => r.value === 'Kage');
+            await assignRoles(member, targetId);
+            await member.roles.add([kageRank.roleId, kage.roleId]).catch(() => {});
+            userData[targetId].oc_pending_start = null; saveData();
+            await i.update({ content: `✅ **${member.user.username}** accepted as **${kageVal}**!`, components: [] });
+        } else if (p[0] === 'givespins' && p[1] === 'mode') {
+            const targetId = p[2], mode = i.values[0];
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givespins_type_${targetId}_${mode}_${id}`).setPlaceholder('Select Item').addOptions([{ label: 'Clan', value: 'clan' }, { label: 'Element 1', value: 'element1' }, { label: 'Element 2', value: 'element2' }, { label: 'Trait', value: 'trait' }, { label: 'Kenjutsu', value: 'kenjutsu' }, { label: 'Village', value: 'village' }]));
+            await i.update({ content: `Select item to give **${mode}** spins for:`, components: [row] });
+        } else if (p[0] === 'givespins' && p[1] === 'type') {
+            const targetId = p[2], mode = p[3], type = i.values[0];
+            const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`givespins_amt_${targetId}_${mode}_${type}_${id}`).setPlaceholder('Select Amount').addOptions([1, 2, 3, 5, 10, 20, 50].map(n => ({ label: `${n} Spins`, value: `${n}` }))));
+            await i.update({ content: `Select amount of **${mode}** ${type} spins:`, components: [row] });
+        } else if (p[0] === 'givespins' && p[1] === 'amt') {
+            const targetId = p[2], mode = p[3], type = p[4], amt = parseInt(i.values[0]);
+            ensureUser(targetId);
+            if (mode === 'lucky') userData[targetId].luckySpins[type] = (userData[targetId].luckySpins[type] || 0) + amt;
+            else userData[targetId].spins[type] = (userData[targetId].spins[type] || 0) + amt;
             saveData();
-            await i.update({ content: `✅ Chosen **${choice}**! Roles will be assigned upon \`!accept\`.`, components: [] });
+            await i.update({ content: `✅ Added **${amt}** ${mode} ${type} spins to <@${targetId}>.`, components: [] });
         } else if (p[0] === 'cap' && p[1] === 'cat') {
             const type = i.values[0];
             const pool = type === 'elements' ? ELEMENTS : (type === 'clan' ? CLANS : (type === 'trait' ? TRAITS : (type === 'village' ? VILLAGES : (type === 'specialty' ? SPECIALTIES : (type === 'subSpecialty' ? SUB_SPECIALTIES : KENJUTSU)))));
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`cap_item_${id}`).setPlaceholder('Select Item to Cap').addOptions(pool.filter(it => !capData.capped.includes(it.item)).slice(0, 25).map(it => ({ label: it.item, value: it.item, emoji: it.emoji }))));
             await i.update({ content: `Select an item from **${type}** to cap:`, components: [row] });
         } else if (p[0] === 'cap' && p[1] === 'item') {
-            const item = i.values[0];
-            if (!capData.capped.includes(item)) { capData.capped.push(item); saveData(); }
-            await i.update({ content: `✅ **${item}** has been capped and removed from all pools.`, components: [] });
+            const item = i.values[0]; if (!capData.capped.includes(item)) { capData.capped.push(item); saveData(); }
+            await i.update({ content: `✅ **${item}** capped.`, components: [] });
         } else if (p[0] === 'uncap' && p[1] === 'item') {
-            const item = i.values[0];
-            const idx = capData.capped.indexOf(item);
+            const item = i.values[0], idx = capData.capped.indexOf(item);
             if (idx > -1) { capData.capped.splice(idx, 1); saveData(); }
-            await i.update({ content: `✅ **${item}** has been uncapped.`, components: [] });
+            await i.update({ content: `✅ **${item}** uncapped.`, components: [] });
         } else if (p[0] === 'give' && p[1] === 'cat') {
-            const type = i.values[0];
-            const targetId = p[2];
+            const type = i.values[0], targetId = p[2];
             if (type === 'clan') {
                 const rarities = ["Mythical", "Legendary", "Epic", "Rare", "Common"];
                 const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_part_${targetId}_clan_${id}`).setPlaceholder('Select Rarity').addOptions(rarities.map(r => ({ label: r, value: r }))));
@@ -521,8 +544,7 @@ client.on(Events.InteractionCreate, async i => {
             const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`give_item_${p[3]}_clan_${id}`).setPlaceholder('Select Clan').addOptions(pool.map(it => ({ label: it.item, value: it.item, emoji: it.emoji }))));
             await i.update({ content: `Select clan for <@${p[3]}>:`, components: [row] });
         } else if (p[0] === 'give' && p[1] === 'item') {
-            userData[p[2]].finalized[p[3]] = i.values[0];
-            saveData();
+            userData[p[2]].finalized[p[3]] = i.values[0]; saveData();
             await i.update({ content: `✅ Gave **${i.values[0]}** to <@${p[2]}>!`, components: [] });
         }
     }
